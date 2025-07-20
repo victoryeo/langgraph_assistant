@@ -12,6 +12,7 @@ load_dotenv()
 
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 
+# NOTE: langchain task assistant
 class TaskAssistant:
     def __init__(self, role_prompt: str, category: str, user_id: str):
         self.role_prompt = role_prompt

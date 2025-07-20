@@ -29,6 +29,7 @@ class TaskState2(TypedDict):
     response: str
     extracted_info: Dict[str, Any]
 
+# NOTE: Langgraph task assistant
 class TaskAssistant2:
     def __init__(self, role_prompt: str, category: str, user_id: str):
         self.role_prompt = role_prompt
@@ -406,7 +407,7 @@ class TaskAssistant2:
                 task['completed_at'] = datetime.now().isoformat()
                 return task
         return None
-        
+
 class TaskManager2:
     def __init__(self):
         self.assistants = {}
