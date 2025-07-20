@@ -4,6 +4,27 @@ from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 import uvicorn
 from task_assistant import TaskManager
+from datetime import datetime, timedelta
+
+# Pydantic models for API requests/responses
+class TaskRequest(BaseModel):
+    message: str
+    user_id: Optional[str] = "default_user"
+
+class TaskResponse(BaseModel):
+    success: bool
+    message: str
+    assistant_response: str
+    created_tasks: List[Dict[str, Any]] = []
+
+class TaskSummaryResponse(BaseModel):
+    success: bool
+    summary: Dict[str, Any]
+    assistant_response: str
+
+class TaskListResponse(BaseModel):
+    success: bool
+    tasks: List[Dict[str, Any]]
 
 # Initialize FastAPI app
 app = FastAPI(title="Task Management API", description="API for managing work and personal tasks", version="1.0.0")
