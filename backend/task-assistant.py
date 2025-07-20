@@ -7,6 +7,8 @@ from typing import Dict, List, Any
 import json
 import uuid
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 
