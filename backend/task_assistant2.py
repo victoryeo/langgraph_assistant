@@ -2,10 +2,14 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
+from langchain_core.documents import Document
+from langchain_community.vectorstores import InMemoryVectorStore
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, TypedDict, Annotated
+from typing import Dict, List, Any, TypedDict, Annotated, Optional
 import json
 import uuid
 import os
@@ -46,12 +50,112 @@ class TaskAssistant2:
                 self.llm = ChatOpenAI(model="gpt-4")
             else:
                 raise ValueError("Neither GROQ_API_KEY nor OPENAI_API_KEY is set")
-        
+
+        # Task tracking
         self.tasks = []  # In-memory storage
         self.conversation_history = []
+        self.task_id_to_doc_id = {}  # Map task IDs to document IDs in vector store
         
+        # Setup embeddings for vector store
+        self.embeddings = self._setup_embeddings()
+        
+        # Initialize InMemoryVectorStore for task persistence
+        self.vector_store = InMemoryVectorStore(embedding=self.embeddings)
+   
         # Create LangGraph workflow
         self.workflow = self._create_workflow()
+
+        
+    def _setup_embeddings(self):
+        """Setup embeddings for vector store"""
+        # Use a lightweight model
+        return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    
+    def _task_to_document(self, task: Dict[str, Any]) -> Document:
+        """Convert a task dictionary to a Document for vector storage"""
+        # Create searchable content from task
+        content_parts = [
+            f"Title: {task.get('title', '')}",
+            f"Description: {task.get('description', '')}",
+            f"Category: {task.get('category', '')}",
+            f"Status: {task.get('status', 'pending')}",
+            f"Priority: {task.get('priority', 'medium')}",
+        ]
+        
+        if task.get('tags'):
+            content_parts.append(f"Tags: {', '.join(task['tags'])}")
+        
+        if task.get('deadline'):
+            content_parts.append(f"Deadline: {task['deadline']}")
+        
+        content = "\n".join(content_parts)
+        
+        # Store full task data in metadata
+        metadata = task.copy()
+        metadata['searchable_content'] = content
+        
+        return Document(
+            page_content=content,
+            metadata=metadata
+        )
+    
+    def _add_task_to_vector_store(self, task: Dict[str, Any]) -> str:
+        """Add a task to the vector store and return the document ID"""
+        document = self._task_to_document(task)
+        doc_ids = self.vector_store.add_documents([document])
+        doc_id = doc_ids[0]
+        
+        # Map task ID to document ID
+        self.task_id_to_doc_id[task['id']] = doc_id
+        
+        return doc_id
+    
+    def _update_task_in_vector_store(self, task: Dict[str, Any]):
+        """Update a task in the vector store"""
+        task_id = task['id']
+        if task_id in self.task_id_to_doc_id:
+            # Remove old document
+            doc_id = self.task_id_to_doc_id[task_id]
+            try:
+                self.vector_store.delete([doc_id])
+            except:
+                pass  # Document might not exist
+        
+        # Add updated document
+        self._add_task_to_vector_store(task)
+    
+    def _search_tasks(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
+        """Search tasks using vector similarity"""
+        try:
+            results = self.vector_store.similarity_search(query, k=k)
+            tasks = []
+            for doc in results:
+                if 'id' in doc.metadata:
+                    tasks.append(doc.metadata)
+            return tasks
+        except Exception as e:
+            print(f"Search error: {e}")
+            return self.tasks  # Fallback to all tasks
+    
+    def _get_all_tasks_from_vector_store(self) -> List[Dict[str, Any]]:
+        """Get all tasks from vector store"""
+        try:
+            # Search with a broad query to get all tasks
+            results = self.vector_store.similarity_search("task todo work personal", k=1000)
+            tasks = []
+            seen_ids = set()
+            
+            for doc in results:
+                if 'id' in doc.metadata and doc.metadata['id'] not in seen_ids:
+                    # Filter by category and user
+                    if (doc.metadata.get('category') == self.category and 
+                        doc.metadata.get('user_id') == self.user_id):
+                        tasks.append(doc.metadata)
+                        seen_ids.add(doc.metadata['id'])
+            
+            return tasks
+        except Exception:
+            return self.tasks  # Fallback to in-memory tasks
         
     def _create_workflow(self):
         """Create the LangGraph workflow for task processing"""
@@ -217,7 +321,9 @@ class TaskAssistant2:
             if task_info.get('tags'):
                 task['tags'] = task_info['tags']
             
+            # Add to both in-memory list and vector store
             self.tasks.append(task)
+            self._add_task_to_vector_store(task)
             created_tasks.append(task)
         
         state["created_tasks"] = created_tasks
@@ -228,8 +334,46 @@ class TaskAssistant2:
         """Update existing tasks"""
         updated_tasks = []
         # Implementation for updating tasks would go here
-        # For now, just return the state
+        user_input = state["user_input"].lower()
+        
+        # Search for tasks to update using vector similarity
+        potential_tasks = self._search_tasks(user_input, k=10)
+        
+        for task in potential_tasks:
+            if not task.get('completed', False):
+                # Update logic based on user input
+                updated = False
+                original_task = task.copy()
+                
+                # Update deadline if mentioned
+                new_deadline = self._extract_deadline(user_input)
+                if new_deadline and new_deadline != task.get('deadline'):
+                    task['deadline'] = new_deadline
+                    updated = True
+                
+                # Update priority if mentioned
+                if 'high priority' in user_input or 'urgent' in user_input:
+                    task['priority'] = 'high'
+                    updated = True
+                elif 'low priority' in user_input:
+                    task['priority'] = 'low'
+                    updated = True
+                
+                if updated:
+                    task['updated_at'] = datetime.now().isoformat()
+                    
+                    # Update in both memory and vector store
+                    for i, mem_task in enumerate(self.tasks):
+                        if mem_task['id'] == task['id']:
+                            self.tasks[i] = task
+                            break
+                    
+                    self._update_task_in_vector_store(task)
+                    updated_tasks.append(task)
+                    break  # Update only first matching task
+        
         state["updated_tasks"] = updated_tasks
+        state["tasks"] = self.tasks
         return state
     
     def _complete_tasks(self, state: TaskState2) -> TaskState2:
@@ -237,12 +381,22 @@ class TaskAssistant2:
         user_input = state["user_input"].lower()
         completed_tasks = []
         
-        # Simple completion logic - look for task IDs or titles
-        for task in self.tasks:
+        # Search for tasks to complete using vector similarity
+        potential_tasks = self._search_tasks(user_input, k=10)
+        
+        for task in potential_tasks:
             if not task.get('completed', False):
                 if task['title'].lower() in user_input or task['id'] in user_input:
                     task['completed'] = True
                     task['completed_at'] = datetime.now().isoformat()
+                    
+                    # Update in both memory and vector store
+                    for i, mem_task in enumerate(self.tasks):
+                        if mem_task['id'] == task['id']:
+                            self.tasks[i] = task
+                            break
+                    
+                    self._update_task_in_vector_store(task)
                     completed_tasks.append(task)
         
         state["updated_tasks"] = completed_tasks
@@ -327,9 +481,12 @@ class TaskAssistant2:
         
         return final_state["response"], final_state.get("created_tasks", [])
     
-    # Keep existing helper methods
+    # Enhanced helper methods with vector store integration
     def get_tasks_summary(self):
-        if not self.tasks:
+        # Get fresh tasks from vector store
+        all_tasks = self._get_all_tasks_from_vector_store()
+        
+        if not all_tasks:
             return "No tasks currently tracked."
         
         now = datetime.now()
@@ -342,7 +499,7 @@ class TaskAssistant2:
         future = []
         no_deadline = []
         
-        for task in self.tasks:
+        for task in all_tasks:
             if task.get('completed', False):
                 continue
                 
@@ -372,6 +529,66 @@ class TaskAssistant2:
             'no_deadline': no_deadline
         }
     
+    def search_tasks_by_content(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Search tasks by content using vector similarity"""
+        return self._search_tasks(query, k=limit)
+    
+    def add_task_manual(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Manually add a task (useful for direct API calls)"""
+        task['id'] = task.get('id', str(uuid.uuid4()))
+        task['created_at'] = task.get('created_at', datetime.now().isoformat())
+        task['category'] = self.category
+        task['user_id'] = self.user_id
+        
+        self.tasks.append(task)
+        self._add_task_to_vector_store(task)
+        return task
+    
+    def update_task_manual(self, task_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Manually update a task"""
+        # Find task in memory
+        task = None
+        for i, t in enumerate(self.tasks):
+            if t['id'] == task_id:
+                task = t
+                break
+        
+        if not task:
+            # Try to find in vector store
+            all_tasks = self._get_all_tasks_from_vector_store()
+            for t in all_tasks:
+                if t['id'] == task_id:
+                    task = t
+                    self.tasks.append(task)
+                    break
+        
+        if task:
+            task.update(updates)
+            task['updated_at'] = datetime.now().isoformat()
+            
+            # Update in vector store
+            self._update_task_in_vector_store(task)
+            return task
+        
+        return None
+    
+    def delete_task(self, task_id: str) -> bool:
+        """Delete a task from both memory and vector store"""
+        # Remove from memory
+        self.tasks = [t for t in self.tasks if t['id'] != task_id]
+        
+        # Remove from vector store
+        if task_id in self.task_id_to_doc_id:
+            doc_id = self.task_id_to_doc_id[task_id]
+            try:
+                self.vector_store.delete([doc_id])
+                del self.task_id_to_doc_id[task_id]
+                return True
+            except:
+                pass
+        
+        return False
+    
     def _extract_deadline(self, text: str) -> str:
         """Extract deadline from text - basic implementation"""
         text_lower = text.lower()
@@ -397,16 +614,17 @@ class TaskAssistant2:
         
         return None
 
-    def get_all_tasks(self):
+    def get_all_tasks(self) -> List[Dict[str, Any]]:
+        """Get all tasks, refreshed from vector store"""
+        self.tasks = self._get_all_tasks_from_vector_store()
         return self.tasks
 
-    def mark_task_complete(self, task_id: str):
-        for task in self.tasks:
-            if task['id'] == task_id:
-                task['completed'] = True
-                task['completed_at'] = datetime.now().isoformat()
-                return task
-        return None
+    def mark_task_complete(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Mark a task as complete"""
+        return self.update_task_manual(task_id, {
+            'completed': True,
+            'completed_at': datetime.now().isoformat()
+        })
 
 class TaskManager2:
     def __init__(self):
@@ -507,6 +725,26 @@ async def main():
             f"Mark task '{task_to_complete['title']}' as complete"
         )
         print("Assistant:", response)
+    
+    # Test semantic search capabilities
+    print("\n=== Semantic Search Test ===")
+    search_results = work_assistant.search_tasks_by_content("video filming module")
+    print(f"Found {len(search_results)} tasks matching 'video filming module':")
+    for task in search_results[:3]:
+        print(f"- {task['title']} (Score-based match)")
+    
+    # Test task search and update
+    print("\n=== Task Search and Update ===")
+    response, _ = work_assistant.process_message(
+        "Find the task about filming and update its priority to high"
+    )
+    print("Assistant:", response)
+    
+    # Show vector store persistence
+    print("\n=== Vector Store Persistence Info ===")
+    print(f"Work tasks in vector store: {len(work_assistant._get_all_tasks_from_vector_store())}")
+    print(f"Personal tasks in vector store: {len(personal_assistant._get_all_tasks_from_vector_store())}")
+    print(f"Task-to-Document mappings: {len(work_assistant.task_id_to_doc_id)}")
     
     # Print workflow visualization info
     print("\n=== LangGraph Workflow Info ===")
