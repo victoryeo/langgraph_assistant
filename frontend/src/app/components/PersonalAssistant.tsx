@@ -43,6 +43,7 @@ export default function PersonalAssistant({ onBack }: AssistantProps) {
     setInputValue('');
 
     try {
+      console.log('call chatWithAssistant', inputValue)
       // Call the API to get assistant's response
       const response = await chatWithAssistant({
         message: inputValue,

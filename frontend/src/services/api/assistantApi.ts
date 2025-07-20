@@ -1,3 +1,4 @@
+import { debug } from 'console';
 import { apiRequest } from './client';
 
 export interface ChatMessage {
@@ -36,6 +37,8 @@ export const chatWithAssistant = async (data: ChatRequest): Promise<ChatResponse
   if (response.error) {
     throw new Error(response.error);
   }
+
+  console.log(data.conversation_id || `conv_${Date.now()}`)
 
   // Map the response to match the expected ChatResponse interface
   return {
