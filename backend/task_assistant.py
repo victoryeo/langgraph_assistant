@@ -17,8 +17,18 @@ class TaskAssistant:
         self.role_prompt = role_prompt
         self.category = category
         self.user_id = user_id
-        self.llm = ChatGroq(temperature=0.7, model_name="llama-3.3-70b-versatile")
-        #self.llm = ChatOpenAI(model="gpt-4")  
+        
+        # Check if GROQ_API_KEY is available, fallback to OpenAI if not
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        if groq_api_key:
+            self.llm = ChatGroq(temperature=0.7, model_name="llama-3.3-70b-versatile")
+        else:
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if openai_api_key:
+                self.llm = ChatOpenAI(model="gpt-4")
+            else:
+                raise ValueError("Neither GROQ_API_KEY nor OPENAI_API_KEY is set")
+                
         self.tasks = []  # In-memory storage (replace with database in production)
         self.conversation_history = []
         
@@ -32,13 +42,16 @@ class TaskAssistant:
         task['id'] = str(uuid.uuid4())
         task['created_at'] = datetime.now().isoformat()
         task['category'] = self.category
+        task['user_id'] = self.user_id
         self.tasks.append(task)
+        return task
     
     def update_task(self, task_id: str, updates: Dict[str, Any]):
         for task in self.tasks:
             if task['id'] == task_id:
                 task.update(updates)
-                break
+                return task
+        return None
     
     def get_tasks_summary(self):
         if not self.tasks:
@@ -87,6 +100,11 @@ class TaskAssistant:
     async def process_message(self, user_input: str):
         # Parse tasks from user input (basic implementation)
         tasks_summary = self.get_tasks_summary()
+        created_tasks = []
+        
+        # Extract and create tasks before processing with LLM
+        if "create" in user_input.lower() and "todo" in user_input.lower():
+            created_tasks = self._extract_and_create_tasks(user_input)
         
         prompt = self.create_prompt_template()
         response = await self.llm.ainvoke(
@@ -96,18 +114,16 @@ class TaskAssistant:
             )
         )
         
-        # Simple task extraction logic (you might want to make this more sophisticated)
-        if "create" in user_input.lower() and "todo" in user_input.lower():
-            self._extract_and_create_tasks(user_input)
-        
         self.conversation_history.append(HumanMessage(content=user_input))
         self.conversation_history.append(response)
         
-        return response.content
+        return response.content, created_tasks
     
     def _extract_and_create_tasks(self, user_input: str):
         # Basic task extraction - you might want to use an LLM for better parsing
+        created_tasks = []
         lines = user_input.split('\n')
+        
         for line in lines:
             if any(marker in line for marker in ['1)', '2)', '3)', '4)', '5)', '-', '*']):
                 task_text = line.strip()
@@ -123,7 +139,10 @@ class TaskAssistant:
                     if deadline:
                         task['deadline'] = deadline
                     
-                    self.add_task(task)
+                    created_task = self.add_task(task)
+                    created_tasks.append(created_task)
+        
+        return created_tasks
     
     def _extract_deadline(self, text: str) -> str:
         """Extract deadline from text - basic implementation"""
@@ -150,6 +169,16 @@ class TaskAssistant:
         
         return None
 
+    def get_all_tasks(self):
+        return self.tasks
+    
+    def mark_task_complete(self, task_id: str):
+        for task in self.tasks:
+            if task['id'] == task_id:
+                task['completed'] = True
+                task['completed_at'] = datetime.now().isoformat()
+                return task
+        return None
 
 class TaskManager:
     def __init__(self):
