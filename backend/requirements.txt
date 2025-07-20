@@ -6,4 +6,7 @@ langchain_core
 langchain_text_splitters
 langchain_groq
 langgraph
+fastapi
+uvicorn
+
  
