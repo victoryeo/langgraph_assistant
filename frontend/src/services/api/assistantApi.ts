@@ -20,16 +20,29 @@ export interface ChatResponse {
 }
 
 export const chatWithAssistant = async (data: ChatRequest): Promise<ChatResponse> => {
-  const response = await apiRequest<ChatResponse>('/api/chat', {
+  const endpoint = data.assistant_type === 'work' ? '/work/tasks' : '/personal/tasks';
+  
+  const response = await apiRequest<any>(endpoint, {
     method: 'POST',
-    body: JSON.stringify(data),
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: data.message,
+      user_id: 'test_user' // You might want to get this from auth context
+    }),
   });
 
   if (response.error) {
     throw new Error(response.error);
   }
 
-  return response.data!;
+  // Map the response to match the expected ChatResponse interface
+  return {
+    response: response.data.assistant_response,
+    conversation_id: data.conversation_id || `conv_${Date.now()}`,
+    timestamp: new Date().toISOString()
+  };
 };
 
 export const getChatHistory = async (conversationId: string): Promise<ChatMessage[]> => {
