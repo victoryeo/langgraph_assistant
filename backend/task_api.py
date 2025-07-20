@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 import uvicorn
-from task_assistant import TaskManager
+#from task_assistant import TaskManager
+from task_assistant2 import TaskManager2
 from datetime import datetime, timedelta
 
 # Pydantic models for API requests/responses
@@ -39,7 +40,7 @@ app.add_middleware(
 )
 
 # Initialize task manager
-task_manager = TaskManager()
+task_manager = TaskManager2()
 
 @app.get("/")
 async def root():
