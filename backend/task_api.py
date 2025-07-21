@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Dict, List, Any, Optional
 import uvicorn
 #from task_assistant import TaskManager
@@ -9,8 +9,41 @@ from datetime import datetime, timedelta
 
 # Pydantic models for API requests/responses
 class TaskRequest(BaseModel):
-    message: str
-    user_id: Optional[str] = "default_user"
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=1000,
+        description="The task message or request",
+        example="Create a task to review the quarterly report"
+    )
+    user_id: Optional[str] = Field(
+        default="default_user",
+        max_length=50,
+        description="User identifier",
+        example="user_123"
+    )
+    
+    @field_validator('message')
+    @classmethod
+    def validate_message(cls, v):
+        if not v or v.isspace():
+            raise ValueError('Message cannot be empty or contain only whitespace')
+        
+        # Remove excessive whitespace
+        v = ' '.join(v.split())
+        
+        # Check for minimum meaningful content
+        if len(v.strip()) < 3:
+            raise ValueError('Message must contain at least 3 characters')
+            
+        return v
+    
+    @field_validator('user_id')
+    @classmethod
+    def validate_user_id(cls, v):
+        if v and not v.replace('_', '').replace('-', '').isalnum():
+            raise ValueError('User ID can only contain alphanumeric characters, hyphens, and underscores')
+        return v
 
 class TaskResponse(BaseModel):
     success: bool
