@@ -8,5 +8,6 @@ langchain_groq
 langgraph
 fastapi
 uvicorn
+langchain-huggingface
 
  
