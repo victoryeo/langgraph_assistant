@@ -1,6 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, field_validator
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator, ValidationError
 from typing import Dict, List, Any, Optional
 import uvicorn
 #from task_assistant import TaskManager
@@ -33,8 +35,11 @@ class TaskRequest(BaseModel):
         v = ' '.join(v.split())
         
         # Check for minimum meaningful content
-        if len(v.strip()) < 3:
-            raise ValueError('Message must contain at least 3 characters')
+        if len(v.strip()) < 2:
+            raise ValueError('Message must contain at least 2 characters')
+
+        if v == "fuck":
+            raise ValueError('Message cannot be "fuck"')
             
         return v
     
@@ -71,6 +76,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# IMPORTANT: Add the exception handler RIGHT AFTER creating the app and middleware
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Custom handler for Pydantic validation errors to return user-friendly messages
+    """
+    print(f"Validation error occurred: {exc.errors()}")  # Debug line
+    
+    errors = []
+    for error in exc.errors():        
+        if error['type'] == 'value_error':
+            # Extract the custom ValueError message
+            errors.append({
+                'field': error['loc'][-1] if error['loc'] else 'unknown',
+                'message': error['msg'],
+                'type': error['type']
+            })
+        else:
+            # Handle other validation errors
+            errors.append({
+                'field': error['loc'][-1] if error['loc'] else 'unknown',
+                'message': error['msg'],
+                'type': error['type']
+            })
+    
+    return JSONResponse(
+        status_code=400,  # Bad Request instead of 422
+        content={
+            'success': False,
+            'message': 'Validation failed',
+            'errors': errors,
+            'detail': 'Please check your input and try again.'
+        }
+    )
 
 # Initialize task manager
 task_manager = TaskManager2()
@@ -221,6 +261,11 @@ async def health_check():
         "work_assistant_tasks": len(task_manager.get_assistant('work').get_all_tasks()),
         "personal_assistant_tasks": len(task_manager.get_assistant('personal').get_all_tasks())
     }
+
+# Add this simple test endpoint to verify the exception handler works
+@app.post("/test-validation")
+async def test_validation(request: TaskRequest):
+    return {"message": "Validation passed", "data": request.dict()}
 
 if __name__ == "__main__":
     # For development - use uvicorn in production
