@@ -3,7 +3,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_core.documents import Document
-from langchain_community.vectorstores import InMemoryVectorStore
+#from langchain_community.vectorstores import InMemoryVectorStore
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams
+from langchain_qdrant import QdrantVectorStore
 from langchain_openai import OpenAIEmbeddings
 #from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -20,6 +23,7 @@ import re
 
 load_dotenv()
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
+os.environ["QDRANT_API_KEY"] = os.getenv("QDRANT_API_KEY")
 
 # State definition for LangGraph
 class TaskState2(TypedDict):
@@ -36,11 +40,12 @@ class TaskState2(TypedDict):
 
 # NOTE: Langgraph task assistant
 class TaskAssistant2:
-    def __init__(self, role_prompt: str, category: str, user_id: str):
+    def __init__(self, role_prompt: str, category: str, user_id: str, qdrant_url: str):
         self.role_prompt = role_prompt
         self.category = category
         self.user_id = user_id
-        
+        self.qdrant_url = qdrant_url
+
         # LLM setup
         groq_api_key = os.getenv("GROQ_API_KEY")
         if groq_api_key:
@@ -61,8 +66,22 @@ class TaskAssistant2:
         self.embeddings = self._setup_embeddings()
         
         # Initialize InMemoryVectorStore for task persistence
-        self.vector_store = InMemoryVectorStore(embedding=self.embeddings)
-   
+        # self.vector_store = InMemoryVectorStore(embedding=self.embeddings)
+        
+        # Initialize Qdrant client and vector store
+        self.qdrant_client = QdrantClient(
+            url=self.qdrant_url,
+            api_key=os.getenv("QDRANT_API_KEY"),
+        )
+        self.collection_name = f"tasks_{category}_{user_id}"
+        self._setup_qdrant_collection()
+        
+        # Initialize Qdrant vector store
+        self.vector_store = QdrantVectorStore(
+            client=self.qdrant_client,
+            collection_name=self.collection_name,
+            embedding=self.embeddings
+        )
         # Create LangGraph workflow
         self.workflow = self._create_workflow()
 
@@ -72,6 +91,30 @@ class TaskAssistant2:
         # Use a lightweight model
         return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     
+    def _setup_qdrant_collection(self):
+        """Setup Qdrant collection if it doesn't exist"""
+        try:
+            # Check if collection exists
+            collections = self.qdrant_client.get_collections().collections
+            collection_names = [col.name for col in collections]
+            
+            if self.collection_name not in collection_names:
+                # Create collection with vector configuration
+                self.qdrant_client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(
+                        size=384,  # all-MiniLM-L6-v2 produces 384-dimensional vectors
+                        distance=Distance.COSINE
+                    )
+                )
+                print(f"Created Qdrant collection: {self.collection_name}")
+            else:
+                print(f"Using existing Qdrant collection: {self.collection_name}")
+                
+        except Exception as e:
+            print(f"Error setting up Qdrant collection: {e}")
+            raise
+
     def _task_to_document(self, task: Dict[str, Any]) -> Document:
         """Convert a task dictionary to a Document for vector storage"""
         # Create searchable content from task
@@ -627,10 +670,25 @@ class TaskAssistant2:
             'completed_at': datetime.now().isoformat()
         })
 
+    def get_qdrant_collection_info(self) -> Dict[str, Any]:
+        """Get information about the Qdrant collection"""
+        try:
+            collection_info = self.qdrant_client.get_collection(self.collection_name)
+            return {
+                "collection_name": self.collection_name,
+                "vectors_count": collection_info.vectors_count,
+                "points_count": collection_info.points_count,
+                "status": collection_info.status
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
 class TaskManager2:
     def __init__(self):
         self.assistants = {}
-        
+        self.qdrant_url = os.getenv("QDRANT_URL")
+        print(f"QDRANT_URL: {self.qdrant_url}")
+
         # Personal assistant configuration
         personal_role = """You are a friendly and organized personal task assistant powered by LangGraph workflows. Your main focus is helping users stay on top of their personal tasks and commitments through structured processing. Specifically:
 
@@ -672,8 +730,8 @@ Your communication style should be supportive but practical.
 
 When tasks are missing deadlines, respond with something like "I notice [task] doesn't have a deadline yet. Based on similar tasks, this might take [suggested timeframe]. Would you like to set a deadline with this in mind?"""
 
-        self.assistants['personal'] = TaskAssistant2(personal_role, 'personal', 'lance')
-        self.assistants['work'] = TaskAssistant2(work_role, 'work', 'lance')
+        self.assistants['personal'] = TaskAssistant2(personal_role, 'personal', 'lance', self.qdrant_url)
+        self.assistants['work'] = TaskAssistant2(work_role, 'work', 'lance', self.qdrant_url)
     
     def get_assistant(self, category: str) -> TaskAssistant2:
         return self.assistants.get(category)
