@@ -9,3 +9,4 @@ pip install -r requirements.txt
 
 Run the backend:
 python task_api.py 
+uvicorn task_api:app --reload
