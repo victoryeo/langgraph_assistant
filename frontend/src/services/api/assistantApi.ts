@@ -20,6 +20,33 @@ export interface ChatResponse {
   timestamp: string;
 }
 
+export interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  created_at: string;
+  updated_at?: string;
+  completed?: boolean;
+  deadline?: string;
+  priority?: string;
+  tags?: string[];
+}
+
+export const fetchTasks = async (assistantType: 'work' | 'personal'): Promise<Task[]> => {
+  const endpoint = `/${assistantType}/tasks`;
+  
+  const response = await apiRequest<{ tasks: Task[] }>(endpoint, {
+    method: 'GET',
+  });
+
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data?.tasks || [];
+};
+
 export const chatWithAssistant = async (data: ChatRequest): Promise<ChatResponse> => {
   const endpoint = data.assistant_type === 'work' ? '/work/tasks' : '/personal/tasks';
   

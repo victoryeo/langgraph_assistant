@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { chatWithAssistant } from '../../services/api';
+import { chatWithAssistant, fetchTasks, Task } from '../../services/api/assistantApi';
 
 type Message = {
   id: string;
@@ -17,6 +17,9 @@ type AssistantProps = {
 export default function WorkAssistant({ onBack }: AssistantProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [showTasks, setShowTasks] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -27,9 +30,45 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
     scrollToBottom();
   }, [messages]);
 
+  const handleFetchTasks = async () => {
+    try {
+      setIsLoading(true);
+      const fetchedTasks = await fetchTasks('work');
+      setTasks(fetchedTasks);
+      setShowTasks(true);
+      
+      // Add a system message to show the tasks
+      const taskList = fetchedTasks.map(task => 
+        `- ${task.title} (${task.status})`
+      ).join('\n');
+      
+      const systemMessage: Message = {
+        id: `tasks-${Date.now()}`,
+        text: `Here are your current tasks:\n${taskList}`,
+        sender: 'assistant',
+        timestamp: new Date(),
+      };
+      
+      setMessages(prev => [...prev, systemMessage]);
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        text: 'Failed to fetch tasks. Please try again.',
+        sender: 'assistant',
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
+    
+    setShowTasks(false); // Hide tasks when sending a new message
 
     // Add user message
     const userMessage: Message = {
@@ -72,26 +111,64 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden flex flex-col h-[calc(100vh-4rem)] my-4">
+    <div className="flex flex-col h-screen bg-gray-100">
+      <div className="bg-blue-600 text-white p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <button
+              onClick={onBack}
+              className="mr-4 p-2 rounded-full hover:bg-blue-700"
+              aria-label="Back to menu"
+            >
+              ←
+            </button>
+            <h1 className="text-xl font-bold">Work Assistant</h1>
+          </div>
+          <button
+            onClick={handleFetchTasks}
+            disabled={isLoading}
+            className="px-4 py-2 bg-white text-blue-600 rounded-md font-medium hover:bg-blue-50 disabled:opacity-50"
+          >
+            {isLoading ? 'Loading...' : 'My Tasks'}
+          </button>
+        </div>
+      </div>
+      
       {/* Header */}
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center">
-          <button 
-            onClick={onBack}
-            className="mr-4 p-2 rounded-full hover:bg-gray-100"
-            aria-label="Back to assistant selection"
-          >
-            ←
-          </button>
           <div>
-            <h2 className="text-2xl font-semibold text-gray-800">Work Assistant</h2>
             <p className="text-sm text-gray-500">How can I help you today?</p>
           </div>
         </div>
       </div>
-      
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {showTasks && tasks.length > 0 && (
+          <div className="mb-4 p-4 bg-white rounded-lg shadow">
+            <h2 className="text-lg font-semibold mb-2">Your Tasks</h2>
+            <ul className="space-y-2">
+              {tasks.map((task) => (
+                <li key={task.id} className="flex items-center p-2 hover:bg-gray-50 rounded">
+                  <input
+                    type="checkbox"
+                    checked={task.completed}
+                    readOnly
+                    className="h-4 w-4 text-blue-600 rounded"
+                  />
+                  <span className={`ml-2 ${task.completed ? 'line-through text-gray-500' : ''}`}>
+                    {task.title}
+                    {task.priority && (
+                      <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-yellow-100 text-yellow-800">
+                        {task.priority}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center text-gray-400">
@@ -105,13 +182,16 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
               className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[80%] p-4 rounded-2xl ${
+                className={`max-w-3/4 rounded-lg p-3 ${
                   message.sender === 'user'
                     ? 'bg-blue-500 text-white rounded-br-none'
-                    : 'bg-gray-100 text-gray-800 rounded-bl-none'
+                    : 'bg-white text-gray-800 rounded-bl-none border border-gray-200'
                 }`}
               >
-                <p className="whitespace-pre-wrap">{message.text}  - {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                <div className="whitespace-pre-line">{message.text}</div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {message.timestamp.toLocaleTimeString()}
+                </div>
               </div>
             </div>
           ))
