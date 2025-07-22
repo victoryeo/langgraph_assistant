@@ -8,6 +8,7 @@ import uvicorn
 #from task_assistant import TaskManager
 from task_assistant2 import TaskManager2
 from datetime import datetime, timedelta
+import re
 
 # Pydantic models for API requests/responses
 class TaskRequest(BaseModel):
@@ -38,8 +39,20 @@ class TaskRequest(BaseModel):
         if len(v.strip()) < 2:
             raise ValueError('Message must contain at least 2 characters')
 
-        if v == "fuck":
-            raise ValueError('Message cannot be "fuck"')
+        # Check for profanity in various forms (case insensitive and with common substitutions)
+        profanity_patterns = [
+            r'f[\*u\$@]c[\*kq]',  # Matches f**k, f*ck, f*ck, fu*k, f**k, f*ck, etc.
+            r'p[o0]rn',             # Matches porn, p0rn
+            r'p[o0]rn[o0]',         # Matches porno, p0rn0
+            r'wh[o0]re',            # Matches whore, wh0re
+            r'sl[u\*]t',            # Matches slut, sl*t
+            r'p[o0]rn[o0]gr[a@]phy', # Matches pornography, p0rn0graphy
+        ]
+        
+        # Check if any profanity pattern matches
+        for pattern in profanity_patterns:
+            if re.search(pattern, v, re.IGNORECASE):
+                raise ValueError('Message contains profanity')
             
         return v
     
