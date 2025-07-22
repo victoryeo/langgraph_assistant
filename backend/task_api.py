@@ -80,35 +80,35 @@ app.add_middleware(
 # IMPORTANT: Add the exception handler RIGHT AFTER creating the app and middleware
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """
-    Custom handler for Pydantic validation errors to return user-friendly messages
-    """
-    print(f"Validation error occurred: {exc.errors()}")  # Debug line
+    print(f"Validation handler triggered for: {request.url}")
+    print(f"Validation errors: {exc.errors()}")
     
-    errors = []
-    for error in exc.errors():        
-        if error['type'] == 'value_error':
-            # Extract the custom ValueError message
-            errors.append({
-                'field': error['loc'][-1] if error['loc'] else 'unknown',
-                'message': error['msg'],
-                'type': error['type']
-            })
-        else:
-            # Handle other validation errors
-            errors.append({
-                'field': error['loc'][-1] if error['loc'] else 'unknown',
-                'message': error['msg'],
-                'type': error['type']
-            })
+    # Extract meaningful error messages
+    custom_errors = []
+    error_messages = []
     
+    for error in exc.errors():
+        field_name = ".".join(str(loc) for loc in error["loc"][1:]) if len(error["loc"]) > 1 else "unknown"
+        error_msg = error.get("msg", "Validation error")
+        
+        # Add to error messages list
+        error_messages.append(f"{field_name}: {error_msg}")
+        
+        # Add to custom errors
+        custom_errors.append({
+            "field": field_name,
+            "message": error_msg,
+            "type": error.get("type", "validation_error")
+        })
+        
+    # Return custom response
     return JSONResponse(
-        status_code=400,  # Bad Request instead of 422
+        status_code=400,
         content={
-            'success': False,
-            'message': 'Validation failed',
-            'errors': errors,
-            'detail': 'Please check your input and try again.'
+            "success": False,
+            "message": error_messages[:500],  # Ensure message isn't too long
+            "errors": custom_errors,
+            "detail": "Please check your input and try again."
         }
     )
 
