@@ -9,5 +9,6 @@ langgraph
 fastapi
 uvicorn
 langchain-huggingface
+langchain_qdrant
 
  
