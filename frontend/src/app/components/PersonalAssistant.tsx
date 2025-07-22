@@ -64,7 +64,7 @@ export default function PersonalAssistant({ onBack }: AssistantProps) {
       // Show error message to user
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: 'Sorry, I encountered an error. Please try again.',
+        text: error.message,
         sender: 'assistant',
         timestamp: new Date(),
       };
