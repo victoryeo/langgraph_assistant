@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { chatWithAssistant, fetchTasks, Task } from '../../services/api/assistantApi';
+import { chatWithAssistant, fetchTasks, completeTask, Task } from '../../services/api/assistantApi';
 
 type Message = {
   id: string;
@@ -19,6 +19,9 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [isCompletingTask, setIsCompletingTask] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
   const [showTasks, setShowTasks] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -32,7 +35,8 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
 
   const handleFetchTasks = async () => {
     try {
-      setIsLoading(true);
+      setIsLoadingTasks(true);
+      setTaskError(null);
       const fetchedTasks = await fetchTasks('work');
       setTasks(fetchedTasks);
       setShowTasks(true);
@@ -50,17 +54,41 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
       };
       
       setMessages(prev => [...prev, systemMessage]);
-    } catch (error) {
-      console.error('Error fetching tasks:', error);
-      const errorMessage: Message = {
-        id: `error-${Date.now()}`,
-        text: 'Failed to fetch tasks. Please try again.',
-        sender: 'assistant',
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, errorMessage]);
+    } catch (err) {
+      console.error('Error fetching tasks:', err);
+      setTaskError('Failed to fetch tasks. Please try again.');
     } finally {
-      setIsLoading(false);
+      setIsLoadingTasks(false);
+    }
+  };
+
+  const handleCompleteTask = async (taskId: string) => {
+    try {
+      setIsCompletingTask(taskId);
+      const updatedTask = await completeTask('work', taskId);
+      
+      // Update the task in the local state
+      setTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === updatedTask.id ? { ...task, completed: true } : task
+        )
+      );
+      
+      // Show success message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          text: `Task marked as complete: ${updatedTask.title}`,
+          sender: 'assistant',
+          timestamp: new Date(),
+        },
+      ]);
+    } catch (err) {
+      console.error('Error completing task:', err);
+      setTaskError('Failed to complete task. Please try again.');
+    } finally {
+      setIsCompletingTask(null);
     }
   };
 
@@ -126,10 +154,10 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
           </div>
           <button
             onClick={handleFetchTasks}
-            disabled={isLoading}
+            disabled={isLoadingTasks}
             className="px-4 py-2 bg-white text-blue-600 rounded-md font-medium hover:bg-blue-50 disabled:opacity-50"
           >
-            {isLoading ? 'Loading...' : 'My Tasks'}
+            {isLoadingTasks ? 'Loading...' : 'My Tasks'}
           </button>
         </div>
       </div>
@@ -141,22 +169,35 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
             <h2 className="text-lg font-semibold mb-2">Your Tasks</h2>
             <ul className="space-y-2">
               {tasks.map((task) => (
-                <li key={task.id} className="flex items-center p-2 hover:bg-gray-50 rounded">
-                  <input
-                    type="checkbox"
-                    checked={task.completed}
-                    readOnly
-                    className="h-4 w-4 text-blue-600 rounded"
-                  />
-                  <span className={`ml-2 ${task.completed ? 'line-through text-gray-500' : ''}`}>
-                    {task.title}
-                    {task.description && (
-                      <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-yellow-100 text-yellow-800">
-                        {task.description}
+                <div 
+                  key={task.id} 
+                  className="group flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onClick={() => !task.completed && handleCompleteTask(task.id)}
+                        className="h-4 w-4 text-blue-600 rounded"
+                      />
+                      <span className={`truncate ${task.completed ? 'line-through text-gray-500' : 'text-gray-800'}`}>
+                        {task.title} -
                       </span>
-                    )}
-                  </span>
-                </li>
+                      {task.description ? (
+                        <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-yellow-100 text-yellow-800 whitespace-nowrap">
+                          {task.description}
+                        </span>
+                      ) : "null description"}
+                      {task.completed ? (
+                          <svg width="1.5rem" height="1.5rem" className="w-1.5 h-1.5 text-white" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                      ): null
+                      }
+                    </div>
+                  </div>
+                </div>
               ))}
             </ul>
           </div>
