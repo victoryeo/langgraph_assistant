@@ -186,9 +186,9 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
                       </span>
                       {task.description ? (
                         <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-yellow-100 text-yellow-800 whitespace-nowrap">
-                          {task.description}
+                          &nbsp;{task.description}
                         </span>
-                      ) : "null description"}
+                      ) : " null description"}
                       {task.completed ? (
                           <svg width="1.5rem" height="1.5rem" className="w-1.5 h-1.5 text-white" viewBox="0 0 20 20" fill="currentColor">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -202,32 +202,18 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
             </ul>
           </div>
         )}
-        {messages.length === 0 ? (
+        {tasks.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center text-gray-400">
               <p className="text-sm mt-1">Ask me anything about work</p>
             </div>
           </div>
         ) : (
-          messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-3/4 rounded-lg p-3 ${
-                  message.sender === 'user'
-                    ? 'bg-blue-500 text-white rounded-br-none'
-                    : 'bg-white text-gray-800 rounded-bl-none border border-gray-200'
-                }`}
-              >
-                <div className="whitespace-pre-line">{message.text}</div>
-                <div className="text-xs text-gray-500 mt-1">
-                  {message.timestamp.toLocaleTimeString()}
-                </div>
-              </div>
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center text-gray-400">
+              <p className="text-sm mt-1">Above are your tasks - {new Date().toLocaleTimeString()}</p>
             </div>
-          ))
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>
