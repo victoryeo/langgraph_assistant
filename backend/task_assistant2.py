@@ -646,49 +646,67 @@ class TaskAssistant2:
     def delete_task(self, task_id: str) -> bool:
         """Delete a task from both memory and vector store"""
         print(f"Attempting to delete task with ID: {task_id}")
+        task_found = False
         
-        # First try to delete from vector store using the task_id in metadata
-        try:
-            # Search for the task by its ID in the metadata
-            search_results = self.qdrant_client.scroll(
-                collection_name=self.collection_name,
-                scroll_filter={
-                    "must": [
-                        {
-                            "key": "metadata.task_id",
-                            "match": {"value": task_id}
-                        }
-                    ]
-                },
-                limit=1
-            )
-            
-            if search_results[0]:  # If task found in vector store
-                point_id = search_results[0][0].id
-                print(f"Found task in vector store with point ID: {point_id}")
-                
-                # Delete the point from Qdrant
+        # First check in-memory tasks to get the document ID if available
+        doc_id = self.task_id_to_doc_id.get(task_id)
+        
+        # Try to delete from vector store if we have a document ID
+        if doc_id:
+            try:
+                print(f"Deleting from vector store using doc_id {doc_id}")
+                # First try to delete using the document ID if we have it
                 self.qdrant_client.delete(
                     collection_name=self.collection_name,
                     points_selector=models.PointIdsList(
-                        points=[point_id],
+                        points=[doc_id],
                     ),
                 )
-                print(f"Successfully deleted task {task_id} from vector store")
-        except Exception as e:
-            print(f"Error deleting task from vector store: {str(e)}")
+                print(f"Successfully deleted task {task_id} from vector store using doc_id {doc_id}")
+                task_found = True
+            except Exception as e:
+                print(f"Error deleting task using doc_id: {str(e)}")
+        else:
+            try:
+                print(f"Delete using task_id: {task_id}")
+                # Search for any document with this task_id in its payload
+                search_results = self.qdrant_client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter={
+                        "must": [
+                            {
+                                "key": "task_id",
+                                "match": {"value": task_id}
+                            }
+                        ]
+                    },
+                    limit=1
+                )
+                
+                if search_results and search_results[0]:
+                    point_id = search_results[0][0].id
+                    self.qdrant_client.delete(
+                        collection_name=self.collection_name,
+                        points_selector=models.PointIdsList(
+                            points=[point_id],
+                        ),
+                    )
+                    print(f"Successfully deleted task {task_id} from vector store using task_id search")
+                    task_found = True
+            except Exception as e2:
+                print(f"Error in delete attempt: {str(e2)}")
         
         # Remove from in-memory storage
         initial_count = len(self.tasks)
         self.tasks = [t for t in self.tasks if t.get('id') != task_id]
-        
+        task_was_in_memory = len(self.tasks) < initial_count
+        print(f"Task delete {task_found} {task_was_in_memory}")
         # Remove from task_id_to_doc_id mapping
         if task_id in self.task_id_to_doc_id:
             del self.task_id_to_doc_id[task_id]
         
         # Return True if the task was found and deleted from either storage
-        task_was_in_memory = len(self.tasks) < initial_count
-        return task_was_in_memory or bool(search_results and search_results[0])
+        return task_was_in_memory or task_found
     
     def _extract_deadline(self, text: str) -> str:
         """Extract deadline from text - basic implementation"""
