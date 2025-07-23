@@ -265,6 +265,41 @@ async def complete_personal_task(task_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error completing task: {str(e)}")
 
+# Task delete endpoints
+@app.put("/work/tasks/{task_id}/delete")
+async def delete_work_task(task_id: str):
+    try:
+        work_assistant = task_manager.get_assistant('work')
+        if not work_assistant:
+            raise HTTPException(status_code=500, detail="Work assistant not available")
+        
+        result = work_assistant.delete_task(task_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Delete not successful")
+        
+        return {"success": True, "message": f"Task {task_id} deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting task: {str(e)}")
+
+@app.put("/personal/tasks/{task_id}/delete")
+async def delete_personal_task(task_id: str):
+    try:
+        personal_assistant = task_manager.get_assistant('personal')
+        if not personal_assistant:
+            raise HTTPException(status_code=500, detail="Personal assistant not available")
+        
+        result = personal_assistant.delete_task(task_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Delete not successful")
+        
+        return {"success": True, "message": f"Task {task_id} deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting task: {str(e)}")
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():
