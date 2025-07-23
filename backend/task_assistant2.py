@@ -4,7 +4,7 @@ from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_core.documents import Document
 #from langchain_community.vectorstores import InMemoryVectorStore
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, models
 from qdrant_client.models import Distance, VectorParams
 from langchain_qdrant import QdrantVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -74,6 +74,9 @@ class TaskAssistant2:
         self.collection_name = f"tasks_{category}_{user_id}"
         self._setup_qdrant_collection()
         
+        # ensure index is present
+        self._ensure_task_id_index()
+
         # Initialize Qdrant vector store
         self.vector_store = QdrantVectorStore(
             client=self.qdrant_client,
@@ -208,6 +211,7 @@ class TaskAssistant2:
                     # Filter by category and user
                     if (doc.metadata.get('category') == self.category and 
                         doc.metadata.get('user_id') == self.user_id):
+                        print(f"Found task {doc.metadata}.")
                         tasks.append(doc.metadata)
                         seen_ids.add(doc.metadata['id'])
             
@@ -524,7 +528,73 @@ class TaskAssistant2:
         response = self.llm.invoke([HumanMessage(content=response_prompt)])
         state["response"] = response.content
         return state
-    
+
+    def _ensure_task_id_index(self):
+        """
+        Ensures that a payload index exists for the 'id' field in the Qdrant collection.
+        """
+        try:
+            # Check if the collection exists (optional, but good practice)
+            # You might have this check elsewhere, or handle CollectionNotFoundError
+            collection_info = self.qdrant_client.get_collection(collection_name=self.collection_name)
+            print(f"Collection '{self.collection_name}' exists. Status: {collection_info.status.value}")
+
+            # Create the payload index for 'id'
+            # Using FieldIndexType.KEYWORD is appropriate for exact string matches like UUIDs
+            self.qdrant_client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="metadata.id",  # the nested structure is within metadata
+                field_schema=models.PayloadSchemaType.KEYWORD,
+            )
+            print(f"Payload index for 'id' created or already exists in collection '{self.collection_name}'.")
+        except Exception as e:
+            print(f"Error ensuring 'id' index for collection '{self.collection_name}': {e}")
+            # Handle the error appropriately, e.g., log it, raise it, or exit
+
+    def get_task_by_id(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a task by its ID, checking in-memory first, then Qdrant.
+        """
+        # Check in-memory tasks first
+        for task in self.tasks:
+            if task.get('id') == task_id:
+                print(f"Task {task_id} found in in-memory list.")
+                return task
+
+        # If not in memory, search Qdrant
+        print(f"Task {task_id} not in memory. Search collection {self.collection_name}")
+        try:
+            search_results = self.qdrant_client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="id",
+                            match=models.MatchValue(value=task_id)
+                        )
+                    ]
+                ),
+                limit=1,
+                with_payload=True, # We need the full payload (task data)
+                with_vectors=False
+            )
+            
+            if search_results and search_results[0] and search_results[0][0].payload:
+                found_task = search_results[0][0].payload
+                print(f"Task {task_id} found in Qdrant.")
+                # Optionally add to in-memory list if not already there
+                if found_task not in self.tasks:
+                    self.tasks.append(found_task)
+                return found_task
+            else:
+                print(f"Task {task_id} not found in Qdrant.")
+                return None
+        except Exception as e:
+            print(f"Error searching for task {task_id} in Qdrant: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
     async def process_message(self, user_input: str):
         """Process user message through the LangGraph workflow"""
         print(f"Processing message: {user_input}")
@@ -645,7 +715,7 @@ class TaskAssistant2:
     
     def delete_task(self, task_id: str) -> bool:
         """Delete a task from both memory and vector store"""
-        print(f"Attempting to delete task with ID: {task_id}")
+        print(f"Attempting to delete task ID: {task_id} in collection {self.collection_name}")
         task_found = False
         
         # First check in-memory tasks to get the document ID if available
@@ -669,20 +739,29 @@ class TaskAssistant2:
         else:
             try:
                 print(f"Delete using task_id: {task_id}")
+
+                """ scroll_result = self.qdrant_client.scroll(
+                    collection_name=self.collection_name,
+                    limit=10,  # Number of points per batch
+                    with_payload=True,
+                )
+                print(f"Scroll result: {scroll_result}")"""
+                
                 # Search for any document with this task_id in its payload
                 search_results = self.qdrant_client.scroll(
                     collection_name=self.collection_name,
-                    scroll_filter={
-                        "must": [
-                            {
-                                "key": "task_id",
-                                "match": {"value": task_id}
-                            }
+                    scroll_filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="metadata.id",  # the nested structure is within metadata
+                                match=models.MatchValue(value=task_id)
+                            )
                         ]
-                    },
-                    limit=1
+                    ),
+                    limit=1,
+                    with_payload=True
                 )
-                
+                print(f"Search results: {search_results}")
                 if search_results and search_results[0]:
                     point_id = search_results[0][0].id
                     self.qdrant_client.delete(
