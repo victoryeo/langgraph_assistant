@@ -645,20 +645,50 @@ class TaskAssistant2:
     
     def delete_task(self, task_id: str) -> bool:
         """Delete a task from both memory and vector store"""
-        # Remove from memory
-        self.tasks = [t for t in self.tasks if t['id'] != task_id]
+        print(f"Attempting to delete task with ID: {task_id}")
         
-        # Remove from vector store
+        # First try to delete from vector store using the task_id in metadata
+        try:
+            # Search for the task by its ID in the metadata
+            search_results = self.qdrant_client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter={
+                    "must": [
+                        {
+                            "key": "metadata.task_id",
+                            "match": {"value": task_id}
+                        }
+                    ]
+                },
+                limit=1
+            )
+            
+            if search_results[0]:  # If task found in vector store
+                point_id = search_results[0][0].id
+                print(f"Found task in vector store with point ID: {point_id}")
+                
+                # Delete the point from Qdrant
+                self.qdrant_client.delete(
+                    collection_name=self.collection_name,
+                    points_selector=models.PointIdsList(
+                        points=[point_id],
+                    ),
+                )
+                print(f"Successfully deleted task {task_id} from vector store")
+        except Exception as e:
+            print(f"Error deleting task from vector store: {str(e)}")
+        
+        # Remove from in-memory storage
+        initial_count = len(self.tasks)
+        self.tasks = [t for t in self.tasks if t.get('id') != task_id]
+        
+        # Remove from task_id_to_doc_id mapping
         if task_id in self.task_id_to_doc_id:
-            doc_id = self.task_id_to_doc_id[task_id]
-            try:
-                self.vector_store.delete([doc_id])
-                del self.task_id_to_doc_id[task_id]
-                return True
-            except:
-                pass
+            del self.task_id_to_doc_id[task_id]
         
-        return False
+        # Return True if the task was found and deleted from either storage
+        task_was_in_memory = len(self.tasks) < initial_count
+        return task_was_in_memory or bool(search_results and search_results[0])
     
     def _extract_deadline(self, text: str) -> str:
         """Extract deadline from text - basic implementation"""
