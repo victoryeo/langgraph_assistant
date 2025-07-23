@@ -150,9 +150,9 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
                   />
                   <span className={`ml-2 ${task.completed ? 'line-through text-gray-500' : ''}`}>
                     {task.title}
-                    {task.priority && (
+                    {task.description && (
                       <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-yellow-100 text-yellow-800">
-                        {task.priority}
+                        {task.description}
                       </span>
                     )}
                   </span>
