@@ -148,7 +148,8 @@ class TaskAssistant2:
         document = self._task_to_document(task)
         doc_ids = self.vector_store.add_documents([document])
         doc_id = doc_ids[0]
-        
+        print(f"Added task to vector store: {doc_id}")
+
         # Map task ID to document ID
         self.task_id_to_doc_id[task['id']] = doc_id
         
@@ -184,12 +185,27 @@ class TaskAssistant2:
     def _get_all_tasks_from_vector_store(self) -> List[Dict[str, Any]]:
         """Get all tasks from vector store"""
         try:
-            # Search with a broad query to get all tasks
-            results = self.vector_store.similarity_search("task todo work personal", k=1000)
+            # Try multiple search strategies
+            all_results = []
+            all_results = self.vector_store.similarity_search("task todo work personal", k=1000)
+        
+            # Strategy 1: Empty query (gets everything in some implementations)
+            #results1 = self.vector_store.similarity_search("", k=1000)
+            #all_results.extend(results1)
+        
+            # Strategy 2: Very broad terms
+            #results2 = self.vector_store.similarity_search("task", k=1000)
+            #all_results.extend(results2)
+        
+            # Strategy 3: If your vector store supports it, get all documents
+            # results3 = self.vector_store.get_all_documents()  # Implementation dependent
+        
+            print(f'Found {len(all_results)} total results')
+        
             tasks = []
             seen_ids = set()
-            
-            for doc in results:
+        
+            for doc in all_results:
                 if 'id' in doc.metadata and doc.metadata['id'] not in seen_ids:
                     # Filter by category and user
                     if (doc.metadata.get('category') == self.category and 
@@ -284,36 +300,41 @@ class TaskAssistant2:
     
     def _extract_task_info(self, state: TaskState2) -> TaskState2:
         """Extract task information using LLM"""
+        print(f"Extracting task info: {state['user_input']}")
         extraction_prompt = """
         Extract task information from the user input. Return a JSON object with the following structure:
-        {
+        {{
             "tasks": [
-                {
+                {{
                     "title": "task title",
                     "description": "optional description",
                     "deadline": "ISO format datetime if mentioned",
-                    "priority": "high/medium/low if mentioned",
-                    "tags": ["tag1", "tag2"] if any tags mentioned
-                }
+                }}
             ]
-        }
+        }}
         
         User input: {user_input}
         """
-        
+        print(extraction_prompt.format(user_input=state["user_input"]))
+
         try:
+            print("Extracting task info...")
             response = self.llm.invoke([HumanMessage(content=extraction_prompt.format(user_input=state["user_input"]))])
             
-            # Extract JSON from response
-            json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
+            print(f"Response: {response}")
+            json_match = re.findall(r'```json\n(.*?)\n```', response.content, re.DOTALL)
+            print(f"JSON match: {json_match}")
+            print(f"last match: {json_match[-1]}")
             if json_match:
-                extracted_info = json.loads(json_match.group())
+                extracted_info = json.loads(json_match[-1])
             else:
                 # Fallback to basic extraction
                 extracted_info = self._basic_task_extraction(state["user_input"])
             
             state["extracted_info"] = extracted_info
+            print(f"Extracted task info: {state['extracted_info']}")
         except Exception as e:
+            print(f"Extraction failed: {str(e)}")
             # Fallback to basic extraction
             state["extracted_info"] = self._basic_task_extraction(state["user_input"])
             state["messages"].append({"role": "system", "content": f"Extraction fallback used: {str(e)}"})
@@ -344,6 +365,7 @@ class TaskAssistant2:
     def _create_tasks(self, state: TaskState2) -> TaskState2:
         """Create new tasks based on extracted information"""
         created_tasks = []
+        print(f"Creating tasks: {state['user_input']}")
         
         for task_info in state["extracted_info"].get("tasks", []):
             task = {
@@ -367,6 +389,7 @@ class TaskAssistant2:
             
             # Add to both in-memory list and vector store
             self.tasks.append(task)
+            print(f"Created task: {task}")
             self._add_task_to_vector_store(task)
             created_tasks.append(task)
         
@@ -376,6 +399,7 @@ class TaskAssistant2:
     
     def _update_tasks(self, state: TaskState2) -> TaskState2:
         """Update existing tasks"""
+        print(f"Updating tasks: {state['user_input']}")
         updated_tasks = []
         # Implementation for updating tasks would go here
         user_input = state["user_input"].lower()
@@ -422,6 +446,7 @@ class TaskAssistant2:
     
     def _complete_tasks(self, state: TaskState2) -> TaskState2:
         """Mark tasks as complete"""
+        print(f"Completing tasks: {state['user_input']}")
         user_input = state["user_input"].lower()
         completed_tasks = []
         
@@ -449,6 +474,7 @@ class TaskAssistant2:
     
     def _generate_summary(self, state: TaskState2) -> TaskState2:
         """Generate a task summary"""
+        print(f"Generating summary: {state['user_input']}")
         tasks_summary = self.get_tasks_summary()
         
         summary_prompt = """
@@ -473,6 +499,7 @@ class TaskAssistant2:
     
     def _generate_response(self, state: TaskState2) -> TaskState2:
         """Generate final response to user"""
+        print(f"Generating response: {state['user_input']}")
         if state.get("response"):
             return state  # Already have a response from summary
         
@@ -502,6 +529,7 @@ class TaskAssistant2:
     
     async def process_message(self, user_input: str):
         """Process user message through the LangGraph workflow"""
+        print(f"Processing message: {user_input}")
         initial_state = TaskState2(
             messages=[],
             user_input=user_input,
@@ -528,6 +556,7 @@ class TaskAssistant2:
     # Enhanced helper methods with vector store integration
     def get_tasks_summary(self):
         # Get fresh tasks from vector store
+        print(f"Getting tasks summary")
         all_tasks = self._get_all_tasks_from_vector_store()
         
         if not all_tasks:
