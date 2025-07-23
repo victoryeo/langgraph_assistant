@@ -61,6 +61,20 @@ export const completeTask = async (assistantType: 'work' | 'personal', taskId: s
   return response.data?.task;
 };
 
+export const deleteTask = async (assistantType: 'work' | 'personal', taskId: string): Promise<{ success: boolean; message: string }> => {
+  const endpoint = `/${assistantType}/tasks/${taskId}/delete`;
+  
+  const response = await apiRequest<{ success: boolean; message: string }>(endpoint, {
+    method: 'PUT',
+  });
+
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data || { success: false, message: 'Unknown error' };
+};
+
 export const chatWithAssistant = async (data: ChatRequest): Promise<ChatResponse> => {
   const endpoint = data.assistant_type === 'work' ? '/work/tasks' : '/personal/tasks';
   
