@@ -47,6 +47,20 @@ export const fetchTasks = async (assistantType: 'work' | 'personal'): Promise<Ta
   return response.data?.tasks || [];
 };
 
+export const completeTask = async (assistantType: 'work' | 'personal', taskId: string): Promise<Task> => {
+  const endpoint = `/${assistantType}/tasks/${taskId}/complete`;
+  
+  const response = await apiRequest<{ task: Task }>(endpoint, {
+    method: 'PUT',
+  });
+
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data?.task;
+};
+
 export const chatWithAssistant = async (data: ChatRequest): Promise<ChatResponse> => {
   const endpoint = data.assistant_type === 'work' ? '/work/tasks' : '/personal/tasks';
   
