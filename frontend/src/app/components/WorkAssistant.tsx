@@ -160,6 +160,9 @@ export default function WorkAssistant({ onBack }: AssistantProps) {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // Fetch tasks after getting assistant's response
+      handleFetchTasks();
     } catch (error) {
       console.error('Error getting response from assistant:', error);
       
