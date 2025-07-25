@@ -24,18 +24,30 @@ export default function Home() {
         Welcome to Your AI Assistant
       </h1>
       {!activeAssistant ? (
-        <div className="flex flex-col md:flex-row gap-12 justify-center items-center border-4 border-blue-500">
-          {assistants.map((assistant) => (
-            <button
-              key={assistant.id}
-              onClick={() => setActiveAssistant(assistant.id as AssistantType)}
-              className={`p-8 rounded-2xl shadow-md transition-all duration-200 flex flex-col items-center justify-center h-64 w-72 ${assistant.color} border-2 border-transparent hover:border-blue-300 transform hover:scale-105`}
-            >
-              <span className="text-6xl mb-6">{assistant.emoji}</span>
-              <h2 className="text-2xl font-semibold text-gray-800">{assistant.name}</h2>
-              <p className="mt-2 text-gray-600">Click to start chatting</p>
-            </button>
-          ))}
+        <div className="w-full max-w-4xl mx-auto">
+          <table className="w-full border-collapse">
+            <tbody>
+              <tr className="flex flex-wrap justify-center gap-6">
+                {assistants.map((assistant) => (
+                  <td key={assistant.id} className="p-2">
+                    <button
+                      onClick={() => setActiveAssistant(assistant.id as AssistantType)}
+                      className={`p-8 rounded-2xl shadow-md transition-all duration-200 flex flex-col items-center justify-center h-64 w-72 ${assistant.color} border-2 border-transparent hover:border-blue-300 transform hover:scale-105`}
+                      aria-label={`Open ${assistant.name} assistant`}
+                    >
+                      <span className="text-6xl mb-6" role="img" aria-hidden="true">
+                        {assistant.emoji}
+                      </span>
+                      <h2 className="text-2xl font-semibold text-gray-800">
+                        {assistant.name}
+                      </h2>
+                      <p className="mt-2 text-gray-600">Click to start chatting</p>
+                    </button>
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
         </div>
       ) : activeAssistant === 'work' ? (
         <WorkAssistant onBack={handleBack} />
