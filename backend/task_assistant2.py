@@ -326,6 +326,8 @@ class TaskAssistant2:
             print(f"Response: {response}")
             json_match = re.findall(r'```json\n(.*?)\n```', response.content, re.DOTALL)
             print(f"JSON match: {json_match}")
+            if len(json_match) == 0:
+                raise Exception("No JSON match found")
             print(f"last match: {json_match[-1]}")
             if json_match:
                 extracted_info = json.loads(json_match[-1])
@@ -746,7 +748,7 @@ class TaskAssistant2:
                     with_payload=True,
                 )
                 print(f"Scroll result: {scroll_result}")"""
-                
+
                 # Search for any document with this task_id in its payload
                 search_results = self.qdrant_client.scroll(
                     collection_name=self.collection_name,
