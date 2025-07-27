@@ -10,15 +10,13 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, TypedDict, Annotated, Optional
-import json
-import uuid
-import os
 from dotenv import load_dotenv
 import operator
-import re
 import psycopg2 # For direct DB operations if needed, or rely on PGVector
-from sqlalchemy import create_engine, text # For SQLAlchemy based operations if needed
-from supabase import create_client, Client
+import os
+import re
+import json
+import uuid
 
 load_dotenv()
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
@@ -87,7 +85,6 @@ class TaskAssistant3:
         
         # Create LangGraph workflow
         self.workflow = self._create_workflow()
-
         
     def _setup_embeddings(self):
         """Setup embeddings for vector store"""
@@ -146,7 +143,7 @@ class TaskAssistant3:
         task_id = str(task['id'])
         print(f"DEBUG: _update_task_in_vector_store START for task_id: {task_id}")
         
-        # --- Direct SQL Delete Approach (Recommended if LangChain's delete fails) ---
+        # --- Direct SQL Delete Approach (if LangChain's delete fails) ---
         try:
             conn = psycopg2.connect(self.db_connection_string)
             cur = conn.cursor()
