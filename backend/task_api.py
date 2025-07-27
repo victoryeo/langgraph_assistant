@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field, field_validator, ValidationError
 from typing import Dict, List, Any, Optional
 import uvicorn
 #from task_assistant import TaskManager
-from task_assistant2 import TaskManager2
+#from task_assistant2 import TaskManager2
+from task_assistant3 import TaskManager3
 from datetime import datetime, timedelta
 import re
 
@@ -126,7 +127,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 # Initialize task manager
-task_manager = TaskManager2()
+task_manager = TaskManager3()
 
 @app.get("/")
 async def root():
