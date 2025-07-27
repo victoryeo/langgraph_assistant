@@ -143,40 +143,45 @@ class TaskAssistant3:
             return None # Indicate failure
 
     def _update_task_in_vector_store(self, task: Dict[str, Any]):
-        """
-        Update a task in the vector store.
-        LangChain's PGVector doesn't have a direct "update by metadata.id" method.
-        The common pattern is to delete by ID and re-add.
-        However, the `delete` method uses Langchain's internal document IDs, not your task IDs.
-        For a proper update, you'd need to fetch the existing document by its metadata ID,
-        get its internal Langchain ID, then delete, then re-add.
+        task_id = str(task['id'])
+        print(f"DEBUG: _update_task_in_vector_store START for task_id: {task_id}")
         
-        A simpler approach for Langchain PGVector is to use `delete(ids=[langchain_internal_doc_id])`
-        or `delete(filter={"id": task_id_from_your_metadata})`.
-        Let's try using filter based on your task's 'id' in metadata.
-        """
-        task_id = task['id']
-        print(f"DEBUG: Attempting to update task {task_id} in LangChain PGVector.")
+        # --- Direct SQL Delete Approach (Recommended if LangChain's delete fails) ---
         try:
-            # Delete the old document using the 'id' stored in metadata
-            # The filter syntax might vary slightly depending on LangChain version.
-            # For JSONB metadata, it often uses '$eq' or direct key access.
-            # Example filter: {"metadata": {"id": task_id}} or {"id": {"$eq": task_id}}
-            # Let's try the direct metadata key filter as per Langchain's docs
-            # Make sure your PGVector's `where` clause implementation supports this.
+            conn = psycopg2.connect(self.db_connection_string)
+            cur = conn.cursor()
             
-            # First, find the document's internal LangChain ID if needed (for precise deletion)
-            # Or, rely on Langchain's filter-based deletion
-            self.vector_store.delete(filter={"id": task_id}) # This should target your task['id'] in metadata
-            print(f"DEBUG: Deleted old document for task ID {task_id} (or attempted to).")
+            # Get the collection UUID (needed to filter rows belonging to this logical collection)
+            cur.execute(f"SELECT uuid FROM langchain_pg_collection WHERE name = %s;", (self.collection_name,))
+            collection_uuid_row = cur.fetchone()
             
-        except Exception as e:
-            print(f"ERROR: Error deleting old task {task_id} from PGVector during update: {e}")
-            pass # Continue to re-add even if delete fails (e.g., not found)
+            if collection_uuid_row:
+                collection_uuid = collection_uuid_row[0]
+                print(f"DEBUG: Attempting direct SQL DELETE for collection {self.collection_name} ({collection_uuid}) and task_id {task_id}.")
+                
+                delete_sql = f"DELETE FROM langchain_pg_embedding WHERE collection_id = %s AND cmetadata->>'id' = %s;"
+                cur.execute(delete_sql, (str(collection_uuid), task_id))
+                rows_deleted = cur.rowcount
+                conn.commit() # <<< Explicit COMMIT is crucial for direct SQL
+                print(f"DEBUG: Direct SQL DELETE completed. Rows deleted: {rows_deleted} for task ID {task_id}.")
+                if rows_deleted == 0:
+                    print(f"WARNING: Direct SQL delete found 0 rows for task ID {task_id}. Check ID, collection, or if already deleted.")
+            else:
+                print(f"WARNING: Collection '{self.collection_name}' not found during direct SQL delete attempt. No delete performed.")
 
-        # Add the updated document
+            cur.close()
+            conn.close()
+
+        except Exception as e:
+            print(f"ERROR: Exception during direct SQL delete for task {task_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            # If deletion failed, you might still want to try to add the new version.
+        
+        # --- Add the updated document ---
+        print(f"DEBUG: Calling _add_task_to_vector_store for task_id: {task_id} after delete attempt.")
         self._add_task_to_vector_store(task)
-        print(f"DEBUG: Re-added updated task {task_id} to LangChain PGVector.")
+        print(f"DEBUG: _update_task_in_vector_store END for task_id: {task_id}")
 
     def _search_tasks(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         """Search tasks using vector similarity in PGVector"""
@@ -715,21 +720,40 @@ class TaskAssistant3:
         return None
     
     def delete_task(self, task_id: str) -> bool:
-        """Delete a task from both memory and LangChain PGVector"""
-        print(f"DEBUG: Attempting to delete task ID: {task_id} from LangChain PGVector.")
+        """
+        Delete a task from both memory and LangChain PGVector.
+        This method will also use the internal ID lookup for reliability.
+        """
+        print(f"DEBUG: delete_task START for task_id: {task_id}")
         task_deleted_from_db = False
         
         try:
-            # LangChain PGVector's delete method can take a filter
-            # This should target the 'id' key within the 'cmetadata' JSONB column
-            self.vector_store.delete(filter={"id": task_id})
-            print(f"DEBUG: Successfully attempted deletion of task {task_id} from LangChain PGVector via filter.")
-            # PGVector.delete returns None, so we can't directly check rowcount from it.
-            # We'll assume success if no exception is raised.
+            conn = psycopg2.connect(self.db_connection_string)
+            cur = conn.cursor()
+            
+            cur.execute(f"SELECT uuid FROM langchain_pg_collection WHERE name = %s;", (self.collection_name,))
+            collection_uuid_row = cur.fetchone()
+            
+            if collection_uuid_row:
+                collection_uuid = collection_uuid_row[0]
+                print(f"DEBUG: Attempting direct SQL DELETE for collection {self.collection_name} ({collection_uuid}) and task_id {task_id}.")
+                
+                delete_sql = f"DELETE FROM langchain_pg_embedding WHERE collection_id = %s AND cmetadata->>'id' = %s;"
+                cur.execute(delete_sql, (str(collection_uuid), task_id))
+                rows_deleted = cur.rowcount
+                conn.commit() # <<< Explicit COMMIT is crucial for direct SQL
+                print(f"DEBUG: Direct SQL DELETE completed. Rows deleted: {rows_deleted} for task ID {task_id}.")
+                if rows_deleted == 0:
+                    print(f"WARNING: Direct SQL delete found 0 rows for task ID {task_id}. Check ID, collection, or if already deleted.")
+            else:
+                print(f"WARNING: Collection '{self.collection_name}' not found during direct SQL delete attempt. No delete performed.")
+
+            cur.close()
+            conn.close()
             task_deleted_from_db = True
                 
         except Exception as e:
-            print(f"ERROR: Error deleting task {task_id} from LangChain PGVector: {e}")
+            print(f"ERROR: Exception during DB deletion for task {task_id}: {e}")
             import traceback
             traceback.print_exc()
         
@@ -738,7 +762,7 @@ class TaskAssistant3:
         self.tasks = [t for t in self.tasks if t.get('id') != task_id]
         task_was_in_memory = len(self.tasks) < initial_count
         
-        print(f"DEBUG: Task delete status: DB deleted={task_deleted_from_db}, In-memory deleted={task_was_in_memory}")
+        print(f"DEBUG: delete_task END. DB deleted={task_deleted_from_db}, In-memory deleted={task_was_in_memory}")
         
         return task_deleted_from_db or task_was_in_memory
 
