@@ -18,7 +18,6 @@ import operator
 import re
 import psycopg2 # For direct DB operations if needed, or rely on PGVector
 from sqlalchemy import create_engine, text # For SQLAlchemy based operations if needed
-from pgvector.psycopg2 import register_vector # Register vector type for psycopg2
 from supabase import create_client, Client
 
 load_dotenv()
@@ -70,7 +69,6 @@ class TaskAssistant3:
         
         # Initialize PGVector client and table
         self.collection_name = f"tasks_{category}_{user_id}" # Used as table name
-        self._setup_pgvector_table() # This will use self.db_connection_string
         
         # supabase initialization
         #url: str = os.environ.get("SUPABASE_URL")
@@ -85,6 +83,7 @@ class TaskAssistant3:
             distance_strategy=DistanceStrategy.COSINE, # Align with Qdrant's COSINE
             use_jsonb=True # <--- ADD THIS LINE TO EXPLICITLY SET JSONB
         )
+        print(f"DEBUG: PGVector initialized with collection_name: {self.collection_name}")
         
         # Create LangGraph workflow
         self.workflow = self._create_workflow()
@@ -94,49 +93,6 @@ class TaskAssistant3:
         """Setup embeddings for vector store"""
         return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     
-    def _setup_pgvector_table(self):
-        """Setup PGVector table if it doesn't exist, and create index"""
-        try:
-            conn = psycopg2.connect(self.db_connection_string)
-            cur = conn.cursor()
-
-            # Create table if not exists
-            cur.execute(f"""
-                CREATE TABLE IF NOT EXISTS {self.collection_name} (
-                    id UUID PRIMARY KEY,
-                    page_content TEXT,
-                    vector VECTOR(384), -- all-MiniLM-L6-v2 produces 384-dimensional vectors
-                    metadata JSONB
-                );
-            """)
-            conn.commit()
-            print(f"Ensured PGVector table: {self.collection_name}")
-
-            # Create index on the vector column for similarity search
-            # Using COSINE distance for IVFFlat index, adjust if needed (e.g., L2 for Euclidean)
-            # You might need to adjust the lists and probes based on your data size
-            cur.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_{self.collection_name}_vector_ivfflat
-                ON {self.collection_name} USING ivfflat (vector vector_cosine_ops) WITH (lists = 100);
-            """)
-            conn.commit()
-            print(f"Ensured vector index on {self.collection_name}")
-
-            # Create index on metadata.id for direct lookup (like Qdrant's payload index)
-            cur.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_{self.collection_name}_metadata_id 
-                ON {self.collection_name} ((metadata ->> 'id'));
-            """)
-            conn.commit()
-            print(f"Ensured metadata.id index on {self.collection_name}")
-            
-            cur.close()
-            conn.close()
-                
-        except Exception as e:
-            print(f"Error setting up PGVector table: {e}")
-            raise
-
     def _task_to_document(self, task: Dict[str, Any]) -> Document:
         """Convert a task dictionary to a Document for vector storage"""
         content_parts = [
@@ -170,37 +126,58 @@ class TaskAssistant3:
         """Add a task to the vector store and return the document ID (primary key)"""
         document = self._task_to_document(task)
         
-        # PGVector's add_documents can directly handle this.
-        # It will use the 'id' from metadata if specified, otherwise generate one.
-        # We ensure 'id' is always present in task.
-        doc_id = self.vector_store.add_documents([document])[0] 
-        print(f"Added task to vector store: {doc_id}")
-        return doc_id
-    
+        try:
+            # PGVector's add_documents can directly handle this.
+            # It will use the 'id' from metadata if specified, or generate one.
+            doc_ids = self.vector_store.add_documents([document])
+            doc_id = doc_ids[0] if doc_ids else None # Get the first ID
+            if doc_id:
+                print(f"DEBUG: Successfully added task to vector store with ID: {doc_id}")
+            else:
+                print(f"DEBUG: PGVector.add_documents returned no ID for task: {task.get('id')}. This is unexpected if no error occurred.")
+            return doc_id
+        except Exception as e:
+            print(f"ERROR: Failed to add task to vector store: {e}")
+            import traceback
+            traceback.print_exc() # Print full traceback for more details
+            return None # Indicate failure
+
     def _update_task_in_vector_store(self, task: Dict[str, Any]):
-        """Update a task in the vector store by deleting old and adding new.
-        PGVector doesn't have a direct 'update by ID' method for entire documents easily.
-        A better approach for a production system might be to use SQLAlchemy with a direct update query.
-        For simplicity, we delete and re-add here, similar to some Qdrant update patterns.
+        """
+        Update a task in the vector store.
+        LangChain's PGVector doesn't have a direct "update by metadata.id" method.
+        The common pattern is to delete by ID and re-add.
+        However, the `delete` method uses Langchain's internal document IDs, not your task IDs.
+        For a proper update, you'd need to fetch the existing document by its metadata ID,
+        get its internal Langchain ID, then delete, then re-add.
+        
+        A simpler approach for Langchain PGVector is to use `delete(ids=[langchain_internal_doc_id])`
+        or `delete(filter={"id": task_id_from_your_metadata})`.
+        Let's try using filter based on your task's 'id' in metadata.
         """
         task_id = task['id']
+        print(f"DEBUG: Attempting to update task {task_id} in LangChain PGVector.")
         try:
-            # Delete old document by the task_id stored in metadata
-            conn = psycopg2.connect(self.db_connection_string)
-            cur = conn.cursor()
-            cur.execute(f"DELETE FROM {self.collection_name} WHERE metadata->>'id' = %s;", (task_id,))
-            conn.commit()
-            cur.close()
-            conn.close()
-            print(f"Deleted old document for task ID {task_id}")
+            # Delete the old document using the 'id' stored in metadata
+            # The filter syntax might vary slightly depending on LangChain version.
+            # For JSONB metadata, it often uses '$eq' or direct key access.
+            # Example filter: {"metadata": {"id": task_id}} or {"id": {"$eq": task_id}}
+            # Let's try the direct metadata key filter as per Langchain's docs
+            # Make sure your PGVector's `where` clause implementation supports this.
+            
+            # First, find the document's internal LangChain ID if needed (for precise deletion)
+            # Or, rely on Langchain's filter-based deletion
+            self.vector_store.delete(filter={"id": task_id}) # This should target your task['id'] in metadata
+            print(f"DEBUG: Deleted old document for task ID {task_id} (or attempted to).")
+            
         except Exception as e:
-            print(f"Error deleting old task {task_id} from PGVector: {e}")
-            pass # Document might not exist or other issues
+            print(f"ERROR: Error deleting old task {task_id} from PGVector during update: {e}")
+            pass # Continue to re-add even if delete fails (e.g., not found)
 
         # Add the updated document
         self._add_task_to_vector_store(task)
-        print(f"Updated task {task_id} in vector store.")
-    
+        print(f"DEBUG: Re-added updated task {task_id} to LangChain PGVector.")
+
     def _search_tasks(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         """Search tasks using vector similarity in PGVector"""
         try:
@@ -208,24 +185,39 @@ class TaskAssistant3:
             tasks = []
             for doc in results:
                 # PGVector's results typically return Document objects with metadata
-                if 'id' in doc.metadata:
+                if 'id' in doc.metadata: # Ensure your original task ID is in metadata
                     tasks.append(doc.metadata)
+                else:
+                    print(f"WARNING: Document found without 'id' in metadata: {doc.metadata}")
+            print(f"DEBUG: Found {len(tasks)} tasks via similarity search.")
             return tasks
         except Exception as e:
-            print(f"Search error in PGVector: {e}")
+            print(f"ERROR: Search error in LangChain PGVector: {e}")
+            import traceback
+            traceback.print_exc()
             return [t for t in self.tasks if t.get('user_id') == self.user_id and t.get('category') == self.category] # Fallback to in-memory, filtered
-    
+
     def _get_all_tasks_from_vector_store(self) -> List[Dict[str, Any]]:
         """Get all tasks from PGVector, filtered by category and user_id"""
         try:
             conn = psycopg2.connect(self.db_connection_string)
-            register_vector(conn)
             cur = conn.cursor()
+
+            # First, find the collection_id for your logical collection_name
+            cur.execute(f"SELECT uuid FROM langchain_pg_collection WHERE name = %s;", (self.collection_name,))
+            collection_uuid_row = cur.fetchone()
             
-            # Retrieve all documents for the specific collection/table, filtered by user_id and category in metadata
-            # This assumes your collection_name (table name) is already scoped by user/category.
-            # If not, you'd add WHERE clauses like "WHERE metadata->>'user_id' = %s AND metadata->>'category' = %s"
-            cur.execute(f"SELECT metadata FROM {self.collection_name};")
+            if not collection_uuid_row:
+                print(f"WARNING: Collection '{self.collection_name}' not found in langchain_pg_collection. No tasks to retrieve.")
+                cur.close()
+                conn.close()
+                return []
+
+            collection_uuid = collection_uuid_row[0]
+            
+            # Then, retrieve documents from langchain_pg_embedding for that collection_id
+            # The metadata is stored in the 'cmetadata' column
+            cur.execute(f"SELECT cmetadata FROM langchain_pg_embedding WHERE collection_id = %s;", (str(collection_uuid),))
             
             all_tasks_metadata = cur.fetchall()
             cur.close()
@@ -233,19 +225,21 @@ class TaskAssistant3:
             
             tasks = []
             for row in all_tasks_metadata:
-                metadata = row[0] # metadata is the first (and only) column selected
-                # PGVector table creation has the collection_name as f"tasks_{category}_{user_id}",
-                # so the filtering is already implicit by table name.
-                # However, good to have explicit checks if metadata can contain other users/categories for some reason.
+                metadata = row[0] 
+                # The 'cmetadata' column in langchain_pg_embedding IS your metadata
+                # So it should contain 'id', 'category', 'user_id' directly.
                 if (metadata.get('category') == self.category and 
                     metadata.get('user_id') == self.user_id):
                     tasks.append(metadata)
+                else:
+                    print(f"DEBUG: Skipping task from DB due to category/user_id mismatch in cmetadata: {metadata}")
             
-            print(f'Found {len(tasks)} total tasks in PGVector for {self.category}/{self.user_id}')
+            print(f'DEBUG: Found {len(tasks)} total tasks in LangChain PGVector for {self.category}/{self.user_id}')
             return tasks
         except Exception as e:
-            print(f"Error getting all tasks from PGVector: {e}")
-            # Fallback to in-memory tasks, filtered
+            print(f"ERROR: Error getting all tasks from LangChain PGVector (direct query): {e}")
+            import traceback
+            traceback.print_exc()
             return [t for t in self.tasks if t.get('user_id') == self.user_id and t.get('category') == self.category]
         
     def _create_workflow(self):
@@ -554,39 +548,52 @@ class TaskAssistant3:
 
     def get_task_by_id(self, task_id: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieves a task by its ID, checking in-memory first, then PGVector.
+        Retrieves a task by its ID, checking in-memory first, then LangChain PGVector.
         """
         # Check in-memory tasks first
         for task in self.tasks:
             if task.get('id') == task_id:
-                print(f"Task {task_id} found in in-memory list.")
+                print(f"DEBUG: Task {task_id} found in in-memory list.")
                 return task
 
-        # If not in memory, search PGVector directly using the ID in metadata
-        print(f"Task {task_id} not in memory. Searching PGVector table {self.collection_name}")
+        # If not in memory, search LangChain PGVector directly using the ID in metadata
+        print(f"DEBUG: Task {task_id} not in memory. Searching LangChain PGVector for collection: {self.collection_name}")
         try:
             conn = psycopg2.connect(self.db_connection_string)
-            register_vector(conn)
             cur = conn.cursor()
             
-            cur.execute(f"SELECT metadata FROM {self.collection_name} WHERE metadata->>'id' = %s LIMIT 1;", (task_id,))
+            # Find the collection_id for your logical collection_name
+            cur.execute(f"SELECT uuid FROM langchain_pg_collection WHERE name = %s;", (self.collection_name,))
+            collection_uuid_row = cur.fetchone()
+            
+            if not collection_uuid_row:
+                print(f"WARNING: Collection '{self.collection_name}' not found during get_task_by_id.")
+                cur.close()
+                conn.close()
+                return None
+            
+            collection_uuid = collection_uuid_row[0]
+
+            # Query langchain_pg_embedding table, filtering by collection_id and metadata->>'id'
+            cur.execute(f"SELECT cmetadata FROM langchain_pg_embedding WHERE collection_id = %s AND cmetadata->>'id' = %s LIMIT 1;", 
+                        (str(collection_uuid), task_id))
             
             result = cur.fetchone()
             cur.close()
             conn.close()
 
             if result and result[0]:
-                found_task = result[0]
-                print(f"Task {task_id} found in PGVector.")
+                found_task = result[0] # cmetadata is the first (and only) column selected
+                print(f"DEBUG: Task {task_id} found in LangChain PGVector.")
                 # Optionally add to in-memory list if not already there
                 if found_task not in self.tasks:
                     self.tasks.append(found_task)
                 return found_task
             else:
-                print(f"Task {task_id} not found in PGVector.")
+                print(f"DEBUG: Task {task_id} not found in LangChain PGVector.")
                 return None
         except Exception as e:
-            print(f"Error searching for task {task_id} in PGVector: {e}")
+            print(f"ERROR: Error searching for task {task_id} in LangChain PGVector: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -708,28 +715,21 @@ class TaskAssistant3:
         return None
     
     def delete_task(self, task_id: str) -> bool:
-        """Delete a task from both memory and PGVector"""
-        print(f"Attempting to delete task ID: {task_id} from table {self.collection_name}")
+        """Delete a task from both memory and LangChain PGVector"""
+        print(f"DEBUG: Attempting to delete task ID: {task_id} from LangChain PGVector.")
         task_deleted_from_db = False
         
         try:
-            conn = psycopg2.connect(self.db_connection_string)
-            cur = conn.cursor()
-            
-            # Delete from PGVector based on the 'id' field within the metadata JSONB
-            cur.execute(f"DELETE FROM {self.collection_name} WHERE metadata->>'id' = %s;", (task_id,))
-            conn.commit()
-            task_deleted_from_db = cur.rowcount > 0
-            cur.close()
-            conn.close()
-            
-            if task_deleted_from_db:
-                print(f"Successfully deleted task {task_id} from PGVector.")
-            else:
-                print(f"Task {task_id} not found in PGVector to delete.")
+            # LangChain PGVector's delete method can take a filter
+            # This should target the 'id' key within the 'cmetadata' JSONB column
+            self.vector_store.delete(filter={"id": task_id})
+            print(f"DEBUG: Successfully attempted deletion of task {task_id} from LangChain PGVector via filter.")
+            # PGVector.delete returns None, so we can't directly check rowcount from it.
+            # We'll assume success if no exception is raised.
+            task_deleted_from_db = True
                 
         except Exception as e:
-            print(f"Error deleting task {task_id} from PGVector: {e}")
+            print(f"ERROR: Error deleting task {task_id} from LangChain PGVector: {e}")
             import traceback
             traceback.print_exc()
         
@@ -738,11 +738,10 @@ class TaskAssistant3:
         self.tasks = [t for t in self.tasks if t.get('id') != task_id]
         task_was_in_memory = len(self.tasks) < initial_count
         
-        print(f"Task delete status: DB deleted={task_deleted_from_db}, In-memory deleted={task_was_in_memory}")
+        print(f"DEBUG: Task delete status: DB deleted={task_deleted_from_db}, In-memory deleted={task_was_in_memory}")
         
-        # Return True if the task was found and deleted from either storage
         return task_deleted_from_db or task_was_in_memory
-    
+
     def _extract_deadline(self, text: str) -> str:
         """Extract deadline from text - basic implementation"""
         text_lower = text.lower()
