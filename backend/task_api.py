@@ -1,15 +1,39 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator, ValidationError
-from typing import Dict, List, Any, Optional
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.responses import RedirectResponse, JSONResponse
+from pydantic import BaseModel, Field, validator, EmailStr
+from typing import Dict, List, Any, Optional, Union
 import uvicorn
-#from task_assistant import TaskManager
-#from task_assistant2 import TaskManager2
-from task_assistant3 import TaskManager3
 from datetime import datetime, timedelta
 import re
+import os
+import json
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+
+# Import task manager
+from task_assistant3 import TaskManager3
+
+# OAuth2 and JWT configuration
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-here")  # Change this to a secure secret key
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+# Google OAuth2 config
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+
+if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+    raise ValueError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in environment variables")
+
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # Pydantic models for API requests/responses
 class TaskRequest(BaseModel):
@@ -126,8 +150,179 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         }
     )
 
+# User model for authentication
+class User(BaseModel):
+    email: EmailStr
+    name: Optional[str] = None
+    picture: Optional[str] = None
+    disabled: Optional[bool] = False
+
+class UserInDB(User):
+    hashed_password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    email: Optional[str] = None
+
+# In-memory user store (replace with database in production)
+fake_users_db = {}
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+        token_data = TokenData(email=email)
+    except JWTError:
+        raise credentials_exception
+    
+    user = fake_users_db.get(token_data.email)
+    if user is None:
+        raise credentials_exception
+    return user
+
+async def get_current_active_user(current_user: User = Depends(get_current_user)):
+    if current_user.disabled:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
 # Initialize task manager
 task_manager = TaskManager3()
+
+@app.get("/auth/google")
+async def login_google():
+    """
+    Redirects the user to Google's OAuth2 consent screen.
+    """
+    from requests_oauthlib import OAuth2Session
+    
+    # Set up OAuth session
+    oauth = OAuth2Session(
+        GOOGLE_CLIENT_ID,
+        redirect_uri=GOOGLE_REDIRECT_URI,
+        scope=["openid", "email", "profile"]
+    )
+    
+    # Generate authorization URL
+    authorization_url, state = oauth.authorization_url(
+        "https://accounts.google.com/o/oauth2/auth",
+        access_type="offline",
+        prompt="select_account"
+    )
+    
+    return {"authorization_url": authorization_url}
+
+@app.get("/auth/google/callback")
+async def auth_google_callback(code: str):
+    """
+    Callback URL for Google OAuth2 authentication.
+    """
+    try:
+        # Exchange authorization code for tokens
+        from requests_oauthlib import OAuth2Session
+        
+        oauth = OAuth2Session(
+            GOOGLE_CLIENT_ID,
+            redirect_uri=GOOGLE_REDIRECT_URI,
+            scope=["openid", "email", "profile"]
+        )
+        
+        token_url = "https://oauth2.googleapis.com/token"
+        token = oauth.fetch_token(
+            token_url,
+            client_secret=GOOGLE_CLIENT_SECRET,
+            code=code,
+            include_client_id=True
+        )
+        
+        # Get user info
+        userinfo = oauth.get("https://www.googleapis.com/oauth2/v1/userinfo").json()
+        
+        # Create or update user in our database
+        email = userinfo["email"]
+        user = fake_users_db.get(email)
+        
+        if not user:
+            # Create new user
+            user = User(
+                email=email,
+                name=userinfo.get("name"),
+                picture=userinfo.get("picture"),
+                disabled=False
+            )
+            fake_users_db[email] = user
+        
+        # Create JWT token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.email}, expires_delta=access_token_expires
+        )
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": user
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@app.post("/register")
+async def register_user(user: User):
+    """
+    Register a new user (alternative to OAuth)
+    """
+    if user.email in fake_users_db:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # In a real app, you would hash the password
+    hashed_password = pwd_context.hash("temporary_password")
+    user_in_db = UserInDB(**user.dict(), hashed_password=hashed_password)
+    fake_users_db[user.email] = user_in_db
+    
+    return {"message": "User created successfully", "email": user.email}
+
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    """
+    OAuth2 password flow for token generation (alternative to Google OAuth)
+    """
+    user = fake_users_db.get(form_data.username)
+    if not user or not pwd_context.verify(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/")
 async def root():
