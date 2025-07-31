@@ -273,7 +273,7 @@ async def auth_google_callback(request: Request):
         # Redirect to frontend with token
         frontend_url = "http://localhost:3001"
         response = RedirectResponse(
-            url=f"{frontend_url}/auth/callback?access_token={access_token}&token_type=bearer"
+            url=f"{frontend_url}/?access_token={access_token}&token_type=bearer"
         )
         return response
         
