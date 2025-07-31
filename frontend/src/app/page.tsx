@@ -225,25 +225,31 @@ export default function Home() {
           Welcome to Your AI Assistant
         </h1>
         {!activeAssistant ? (
-          <div className="w-full max-w-4xl mx-auto">
-            <div className="flex flex-wrap justify-center gap-6">
-              {assistants.map((assistant) => (
-                <div key={assistant.id} className="p-2">
-                  <button
-                    onClick={() => setActiveAssistant(assistant.id as AssistantType)}
-                    className={`p-8 rounded-2xl shadow-md transition-all duration-200 flex flex-col items-center justify-center h-64 w-72 ${assistant.color} border-2 border-transparent hover:border-blue-300 transform hover:scale-105`}
-                    aria-label={`Open ${assistant.name} assistant`}
-                  >
-                    <span className="text-6xl mb-6" role="img" aria-hidden="true">
-                      {assistant.emoji}
-                    </span>
-                    <h2 className="text-2xl font-semibold text-gray-800">
-                      {assistant.name}
-                    </h2>
-                    <p className="mt-2 text-gray-600">Click to start chatting</p>
-                  </button>
-                </div>
-              ))}
+          <div className="w-full max-w-6xl mx-auto">
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+              <table className="min-w-full">
+                <tbody className="bg-white">
+                  <tr>
+                    {assistants.map((assistant) => (
+                      <td key={assistant.id} className="p-4 text-center">
+                        <button
+                          onClick={() => setActiveAssistant(assistant.id as AssistantType)}
+                          className={`p-8 rounded-2xl shadow-md transition-all duration-200 flex flex-col items-center justify-center h-64 w-72 ${assistant.color} border-2 border-transparent hover:border-blue-300 transform hover:scale-105`}
+                          aria-label={`Open ${assistant.name} assistant`}
+                        >
+                          <span className="text-6xl mb-6" role="img" aria-hidden="true">
+                            {assistant.emoji}
+                          </span>
+                          <h2 className="text-2xl font-semibold text-gray-800">
+                            {assistant.name}
+                          </h2>
+                          <p className="mt-2 text-gray-600">Click to start chatting</p>
+                        </button>
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         ) : activeAssistant === 'work' ? (
