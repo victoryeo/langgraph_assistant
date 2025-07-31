@@ -17,7 +17,7 @@ export const loginWithGoogle = async (): Promise<{ user: User; token: string }> 
     const { authorization_url } = await response.json();
     
     // Step 2: Redirect to Google's OAuth consent screen
-    // In a real app, you might want to use a popup or redirect to a dedicated auth page
+    // The backend will handle the callback at /auth/google/callback
     window.location.href = authorization_url;
     
     // This will be a placeholder since we're redirecting
@@ -32,7 +32,9 @@ export const handleGoogleCallback = async (code: string): Promise<{ user: User; 
   try {
     const response = await fetch(`${API_BASE_URL}/auth/google/callback?code=${code}`);
     if (!response.ok) {
-      throw new Error('Failed to authenticate with Google');
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Google auth error:', errorData);
+      throw new Error(errorData.detail || 'Failed to authenticate with Google');
     }
     
     const data = await response.json();
