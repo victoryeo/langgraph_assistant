@@ -21,6 +21,7 @@ export default function Home() {
   const [activeAssistant, setActiveAssistant] = useState<AssistantType>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const assistants: Assistant[] = [
     { id: 'work', name: 'Work Assistant', emoji: '💼', color: 'bg-blue-100 hover:bg-blue-200' },
@@ -28,38 +29,47 @@ export default function Home() {
   ];
 
   useEffect(() => {
-    const code = searchParams?.get('code');
-    console.log('Code:', code);
-    if (code) {
-      console.log('Code received:', code)
-      // Remove the code from URL without refreshing the page
-      const url = new URL(window.location.href);
-      url.searchParams.delete('code');
-      window.history.replaceState({}, '', url.toString());
-    } else {
-      console.log("No code received")
-      setIsLoading(false);
-    }
-    // Check if we're on the callback page with tokens
-    const urlParams = new URLSearchParams(window.location.search);
-    const accessToken = urlParams.get('access_token');
-    const tokenType = urlParams.get('token_type');
+    const handleAuthCallback = () => {
+      // Check for existing token first
+      const existingToken = localStorage.getItem('access_token');
+      if (existingToken) {
+        setIsLoggedIn(true);
+        setIsLoading(false);
+        return;
+      }
 
-    if (accessToken) {
-      // Store the token
-      localStorage.setItem('access_token', accessToken);
-      localStorage.setItem('token_type', tokenType || 'bearer');
+      // Handle OAuth callback parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const accessToken = urlParams.get('access_token');
+      const tokenType = urlParams.get('token_type');
+      const authError = urlParams.get('error');
+
+      if (authError) {
+        setError(`Authentication failed: ${decodeURIComponent(authError)}`);
+        // Clear error params from URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setIsLoading(false);
+        return;
+      }
+
+      if (accessToken) {
+        // Store the tokens
+        localStorage.setItem('access_token', accessToken);
+        localStorage.setItem('token_type', tokenType || 'bearer');
+        
+        // Clear the URL parameters
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        console.log('Login successful!');
+        setIsLoggedIn(true);
+        setError(''); // Clear any previous errors
+      }
       
-      // Clear the URL parameters
-      window.history.replaceState({}, document.title, window.location.pathname);
-            
-      // Optional: Show success message
-      console.log('Login successful!');
-
-      setIsLoggedIn(true);
       setIsLoading(false);
-    }
-  }, [isLoading]);
+    };
+
+    handleAuthCallback();
+  }, []); // Remove isLoading from dependency array to prevent infinite loop
 
   const handleBack = () => {
     setActiveAssistant(null);
@@ -67,17 +77,24 @@ export default function Home() {
 
   const handleGoogleLogin = async () => {
     try {
+      setError(''); // Clear any previous errors
       // Redirect to your FastAPI Google OAuth endpoint
       window.location.href = 'http://localhost:8000/auth/google';
     } catch (error) {
       console.error('Google login error:', error);
-      alert('Failed to initiate Google login. Please try again.');
+      setError('Failed to initiate Google login. Please try again.');
     }
   };
 
   const handleLogout = () => {
-    logout();
+    // Clear tokens from localStorage
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('token_type');
+    localStorage.removeItem('user_info');
+    
     setIsLoggedIn(false);
+    setActiveAssistant(null);
+    setError('');
   };
 
   if (isLoading) {
@@ -97,6 +114,13 @@ export default function Home() {
         </h1>
         <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
           <h2 className="text-2xl font-semibold mb-6 text-center text-gray-800">Sign in to continue</h2>
+          
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+              {error}
+            </div>
+          )}
+          
           <button
             onClick={handleGoogleLogin}
             className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 rounded-lg shadow-sm px-6 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
