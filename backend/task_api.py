@@ -14,6 +14,8 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+from authlib.integrations.starlette_client import OAuth
+from starlette.middleware.sessions import SessionMiddleware
 
 # Import task manager
 from task_assistant3 import TaskManager3
@@ -208,65 +210,55 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
 # Initialize task manager
 task_manager = TaskManager3()
 
+# Add session middleware (required for Authlib)
+app.add_middleware(SessionMiddleware, secret_key="your-secret-key-here")
+
+# Initialize OAuth
+oauth = OAuth()
+
+# Register Google OAuth with correct configuration URL
+oauth.register(
+    name='google',
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',  # Note: openid-configuration (with hyphen)
+    client_kwargs={
+        'scope': 'openid email profile'  # You can use short form with Authlib
+    }
+)
+
 @app.get("/auth/google")
-async def login_google():
-    """
-    Redirects the user to Google's OAuth2 consent screen.
-    """
-    from requests_oauthlib import OAuth2Session
-    
-    # Set up OAuth session
-    oauth = OAuth2Session(
-        GOOGLE_CLIENT_ID,
-        redirect_uri=GOOGLE_REDIRECT_URI,
-        scope=["openid", "email", "profile"]
-    )
-    
-    # Generate authorization URL
-    authorization_url, state = oauth.authorization_url(
-        "https://accounts.google.com/o/oauth2/auth",
-        access_type="offline",
-        prompt="select_account"
-    )
-    
-    return {"authorization_url": authorization_url}
+async def login_google(request: Request):
+    # Generate redirect URI dynamically
+    redirect_uri = request.url_for('auth_google_callback')
+    return await oauth.google.authorize_redirect(request, redirect_uri)
 
 @app.get("/auth/google/callback")
-async def auth_google_callback(code: str):
-    """
-    Callback URL for Google OAuth2 authentication.
-    """
+async def auth_google_callback(request: Request):
     try:
-        # Exchange authorization code for tokens
-        from requests_oauthlib import OAuth2Session
+        # Get the token from Google
+        token = await oauth.google.authorize_access_token(request)
         
-        oauth = OAuth2Session(
-            GOOGLE_CLIENT_ID,
-            redirect_uri=GOOGLE_REDIRECT_URI,
-            scope=["openid", "email", "profile"]
-        )
+        # Get user info (this is automatically included with openid scope)
+        user_info = token.get('userinfo')
         
-        token_url = "https://oauth2.googleapis.com/token"
-        token = oauth.fetch_token(
-            token_url,
-            client_secret=GOOGLE_CLIENT_SECRET,
-            code=code,
-            include_client_id=True
-        )
+        if not user_info:
+            raise HTTPException(status_code=400, detail="Failed to get user info")
         
-        # Get user info
-        userinfo = oauth.get("https://www.googleapis.com/oauth2/v1/userinfo").json()
+        print(f"User info: {user_info}")  # Debug
         
-        # Create or update user in our database
-        email = userinfo["email"]
+        # Create or update user in your database
+        email = user_info.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="No email provided")
+        
         user = fake_users_db.get(email)
-        
         if not user:
             # Create new user
             user = User(
                 email=email,
-                name=userinfo.get("name"),
-                picture=userinfo.get("picture"),
+                name=user_info.get("name"),
+                picture=user_info.get("picture"),
                 disabled=False
             )
             fake_users_db[email] = user
@@ -274,19 +266,22 @@ async def auth_google_callback(code: str):
         # Create JWT token
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": user.email}, expires_delta=access_token_expires
+            data={"sub": user.email}, 
+            expires_delta=access_token_expires
         )
         
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "user": user
-        }
+        # Redirect to frontend with token
+        frontend_url = "http://localhost:3001"
+        response = RedirectResponse(
+            url=f"{frontend_url}/auth/callback?access_token={access_token}&token_type=bearer"
+        )
+        return response
         
     except Exception as e:
+        print(f"OAuth callback error: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            status_code=400, 
+            detail=f"Authentication failed: {str(e)}"
         )
 
 @app.post("/register")
