@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import WorkAssistant from './components/WorkAssistant';
 import PersonalAssistant from './components/PersonalAssistant';
-import { loginWithGoogle, handleGoogleCallback, isAuthenticated, logout } from '../services/auth';
 
 type AssistantType = 'work' | 'personal' | null;
 
@@ -22,6 +21,7 @@ export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [userInfo, setUserInfo] = useState<any>(null);
 
   const assistants: Assistant[] = [
     { id: 'work', name: 'Work Assistant', emoji: '💼', color: 'bg-blue-100 hover:bg-blue-200' },
@@ -32,8 +32,17 @@ export default function Home() {
     const handleAuthCallback = () => {
       // Check for existing token first
       const existingToken = localStorage.getItem('access_token');
+      const existingUserInfo = localStorage.getItem('user_info');
+      
       if (existingToken) {
         setIsLoggedIn(true);
+        if (existingUserInfo) {
+          try {
+            setUserInfo(JSON.parse(existingUserInfo));
+          } catch (e) {
+            console.warn('Failed to parse stored user info:', e);
+          }
+        }
         setIsLoading(false);
         return;
       }
@@ -56,6 +65,23 @@ export default function Home() {
         // Store the tokens
         localStorage.setItem('access_token', accessToken);
         localStorage.setItem('token_type', tokenType || 'bearer');
+        
+        // Try to get user info from token (decode JWT) or make API call
+        try {
+          // Decode JWT to get user info (basic approach)
+          const tokenParts = accessToken.split('.');
+          if (tokenParts.length === 3) {
+            const payload = JSON.parse(atob(tokenParts[1]));
+            if (payload.sub) {
+              // Store basic user info from token
+              const basicUserInfo = { email: payload.sub };
+              localStorage.setItem('user_info', JSON.stringify(basicUserInfo));
+              setUserInfo(basicUserInfo);
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to decode token:', e);
+        }
         
         // Clear the URL parameters
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -94,6 +120,7 @@ export default function Home() {
     
     setIsLoggedIn(false);
     setActiveAssistant(null);
+    setUserInfo(null);
     setError('');
   };
 
@@ -144,12 +171,19 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             <h1 className="text-xl font-bold text-gray-800">AI Assistant</h1>
-            <button
-              onClick={handleLogout}
-              className="text-sm font-medium text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md hover:bg-gray-100"
-            >
-              Sign out
-            </button>
+            <div className="flex items-center gap-4">
+              {userInfo && (
+                <span className="text-sm text-gray-600">
+                  You signed in as <span className="font-medium text-gray-800">{userInfo.email || userInfo.name || 'User'}</span>
+                </span>
+              )}
+              <button
+                onClick={handleLogout}
+                className="text-sm font-medium text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md hover:bg-gray-100"
+              >
+                Sign out
+              </button>
+            </div>
           </div>
         </div>
       </div>
