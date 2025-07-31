@@ -72,9 +72,10 @@ export default function Home() {
           const tokenParts = accessToken.split('.');
           if (tokenParts.length === 3) {
             const payload = JSON.parse(atob(tokenParts[1]));
-            if (payload.sub) {
+            console.log(payload)
+            if (payload.email) {
               // Store basic user info from token
-              const basicUserInfo = { email: payload.sub };
+              const basicUserInfo = { name: payload.name, email: payload.email, picture: payload.picture };
               localStorage.setItem('user_info', JSON.stringify(basicUserInfo));
               setUserInfo(basicUserInfo);
             }
@@ -174,8 +175,15 @@ export default function Home() {
             <div className="flex items-center gap-4">
               {userInfo && (
                 <span className="text-sm text-gray-600">
-                  You signed in as <span className="font-medium text-gray-800">{userInfo.email || userInfo.name || 'User'}</span>
+                  You signed in as <span className="font-medium text-gray-800">{userInfo.name || userInfo.email || 'User'}</span>
                 </span>
+              )}
+              {userInfo && userInfo.picture && (
+                <img
+                  src={userInfo.picture}
+                  alt=""
+                  className="w-8 h-8 rounded-full"
+                />
               )}
               <button
                 onClick={handleLogout}
