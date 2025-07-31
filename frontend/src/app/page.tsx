@@ -29,30 +29,37 @@ export default function Home() {
 
   useEffect(() => {
     const code = searchParams?.get('code');
-    
+    console.log('Code:', code);
     if (code) {
-      const authenticateWithGoogle = async () => {
-        try {
-          await handleGoogleCallback(code);
-          setIsLoggedIn(true);
-          // Remove the code from URL without refreshing the page
-          const url = new URL(window.location.href);
-          url.searchParams.delete('code');
-          window.history.replaceState({}, '', url.toString());
-        } catch (error) {
-          console.error('Authentication failed:', error);
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      
-      authenticateWithGoogle();
+      console.log('Code received:', code)
+      // Remove the code from URL without refreshing the page
+      const url = new URL(window.location.href);
+      url.searchParams.delete('code');
+      window.history.replaceState({}, '', url.toString());
     } else {
-      // Check if user is already logged in
-      setIsLoggedIn(isAuthenticated());
+      console.log("No code received")
       setIsLoading(false);
     }
-  }, [searchParams]);
+    // Check if we're on the callback page with tokens
+    const urlParams = new URLSearchParams(window.location.search);
+    const accessToken = urlParams.get('access_token');
+    const tokenType = urlParams.get('token_type');
+
+    if (accessToken) {
+      // Store the token
+      localStorage.setItem('access_token', accessToken);
+      localStorage.setItem('token_type', tokenType || 'bearer');
+      
+      // Clear the URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+            
+      // Optional: Show success message
+      console.log('Login successful!');
+
+      setIsLoggedIn(true);
+      setIsLoading(false);
+    }
+  }, [isLoading]);
 
   const handleBack = () => {
     setActiveAssistant(null);
@@ -60,9 +67,11 @@ export default function Home() {
 
   const handleGoogleLogin = async () => {
     try {
-      await loginWithGoogle();
+      // Redirect to your FastAPI Google OAuth endpoint
+      window.location.href = 'http://localhost:8000/auth/google';
     } catch (error) {
-      console.error('Login failed:', error);
+      console.error('Google login error:', error);
+      alert('Failed to initiate Google login. Please try again.');
     }
   };
 
