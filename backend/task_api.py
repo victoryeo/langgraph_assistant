@@ -105,6 +105,9 @@ class TaskListResponse(BaseModel):
     success: bool
     tasks: List[Dict[str, Any]]
 
+#==================================================================================
+# FastAPI App and Middleware
+#==================================================================================
 # Initialize FastAPI app
 app = FastAPI(title="Task Management API", description="API for managing work and personal tasks", version="1.0.0")
 
@@ -207,6 +210,9 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
+#=================================================================================
+# Task Manager and Google OAuth Setup (No changes here)
+#=================================================================================
 # Initialize task manager
 task_manager = TaskManager3()
 
@@ -319,15 +325,18 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     
     return {"access_token": access_token, "token_type": "bearer"}
 
+#==================================================================================
+# API Endpoints (All user-specific endpoints now have a security dependency)
+#==================================================================================
 @app.get("/")
 async def root():
     return {"message": "Task Management API", "endpoints": ["/work/tasks", "/personal/tasks", "/work/summary", "/personal/summary"]}
 
 # Work Assistant Endpoints
 @app.post("/work/tasks", response_model=TaskResponse)
-async def create_work_tasks(request: TaskRequest):
+async def create_work_tasks(request: TaskRequest, current_user: User = Depends(get_current_active_user)):
     try:
-        work_assistant = task_manager.get_assistant('work')
+        work_assistant = task_manager.get_assistant('work', user_id=current_user.email)
         if not work_assistant:
             raise HTTPException(status_code=500, detail="Work assistant not available")
         
@@ -343,9 +352,9 @@ async def create_work_tasks(request: TaskRequest):
         raise HTTPException(status_code=500, detail=f"Error processing work tasks: {str(e)}")
 
 @app.get("/work/tasks", response_model=TaskListResponse)
-async def get_work_tasks():
+async def get_work_tasks(current_user: User = Depends(get_current_active_user)):
     try:
-        work_assistant = task_manager.get_assistant('work')
+        work_assistant = task_manager.get_assistant('work', user_id=current_user.email)
         if not work_assistant:
             raise HTTPException(status_code=500, detail="Work assistant not available")
         
@@ -355,9 +364,9 @@ async def get_work_tasks():
         raise HTTPException(status_code=500, detail=f"Error retrieving work tasks: {str(e)}")
 
 @app.post("/work/summary", response_model=TaskSummaryResponse)
-async def get_work_summary(request: TaskRequest):
+async def get_work_summary(request: TaskRequest, current_user: User = Depends(get_current_active_user)):
     try:
-        work_assistant = task_manager.get_assistant('work')
+        work_assistant = task_manager.get_assistant('work', user_id=current_user.email)
         if not work_assistant:
             raise HTTPException(status_code=500, detail="Work assistant not available")
         
@@ -374,9 +383,9 @@ async def get_work_summary(request: TaskRequest):
 
 # Personal Assistant Endpoints
 @app.post("/personal/tasks", response_model=TaskResponse)
-async def create_personal_tasks(request: TaskRequest):
+async def create_personal_tasks(request: TaskRequest, current_user: User = Depends(get_current_active_user)):
     try:
-        personal_assistant = task_manager.get_assistant('personal')
+        personal_assistant = task_manager.get_assistant('personal', user_id=current_user.email)
         if not personal_assistant:
             raise HTTPException(status_code=500, detail="Personal assistant not available")
         
@@ -392,9 +401,9 @@ async def create_personal_tasks(request: TaskRequest):
         raise HTTPException(status_code=500, detail=f"Error processing personal tasks: {str(e)}")
 
 @app.get("/personal/tasks", response_model=TaskListResponse)
-async def get_personal_tasks():
+async def get_personal_tasks(current_user: User = Depends(get_current_active_user)):
     try:
-        personal_assistant = task_manager.get_assistant('personal')
+        personal_assistant = task_manager.get_assistant('personal', user_id=current_user.email)
         if not personal_assistant:
             raise HTTPException(status_code=500, detail="Personal assistant not available")
         
@@ -404,9 +413,9 @@ async def get_personal_tasks():
         raise HTTPException(status_code=500, detail=f"Error retrieving personal tasks: {str(e)}")
 
 @app.post("/personal/summary", response_model=TaskSummaryResponse)
-async def get_personal_summary(request: TaskRequest):
+async def get_personal_summary(request: TaskRequest, current_user: User = Depends(get_current_active_user)):
     try:
-        personal_assistant = task_manager.get_assistant('personal')
+        personal_assistant = task_manager.get_assistant('personal', user_id=current_user.email)
         if not personal_assistant:
             raise HTTPException(status_code=500, detail="Personal assistant not available")
         
@@ -423,9 +432,9 @@ async def get_personal_summary(request: TaskRequest):
 
 # Task completion endpoints
 @app.put("/work/tasks/{task_id}/complete")
-async def complete_work_task(task_id: str):
+async def complete_work_task(task_id: str, current_user: User = Depends(get_current_active_user)):
     try:
-        work_assistant = task_manager.get_assistant('work')
+        work_assistant = task_manager.get_assistant('work', user_id=current_user.email)
         if not work_assistant:
             raise HTTPException(status_code=500, detail="Work assistant not available")
         
@@ -440,9 +449,9 @@ async def complete_work_task(task_id: str):
         raise HTTPException(status_code=500, detail=f"Error completing task: {str(e)}")
 
 @app.put("/personal/tasks/{task_id}/complete")
-async def complete_personal_task(task_id: str):
+async def complete_personal_task(task_id: str, current_user: User = Depends(get_current_active_user)):
     try:
-        personal_assistant = task_manager.get_assistant('personal')
+        personal_assistant = task_manager.get_assistant('personal', user_id=current_user.email)
         if not personal_assistant:
             raise HTTPException(status_code=500, detail="Personal assistant not available")
         
@@ -458,9 +467,9 @@ async def complete_personal_task(task_id: str):
 
 # Task delete endpoints
 @app.put("/work/tasks/{task_id}/delete")
-async def delete_work_task(task_id: str):
+async def delete_work_task(task_id: str, current_user: User = Depends(get_current_active_user)):
     try:
-        work_assistant = task_manager.get_assistant('work')
+        work_assistant = task_manager.get_assistant('work', user_id=current_user.email)
         if not work_assistant:
             raise HTTPException(status_code=500, detail="Work assistant not available")
         
@@ -475,9 +484,9 @@ async def delete_work_task(task_id: str):
         raise HTTPException(status_code=500, detail=f"Error deleting task: {str(e)}")
 
 @app.put("/personal/tasks/{task_id}/delete")
-async def delete_personal_task(task_id: str):
+async def delete_personal_task(task_id: str, current_user: User = Depends(get_current_active_user)):
     try:
-        personal_assistant = task_manager.get_assistant('personal')
+        personal_assistant = task_manager.get_assistant('personal', user_id=current_user.email)
         if not personal_assistant:
             raise HTTPException(status_code=500, detail="Personal assistant not available")
         
