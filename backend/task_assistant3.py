@@ -807,12 +807,19 @@ class TaskAssistant3:
 
 class TaskManager3:
     def __init__(self):
-        self.assistants = {}
+        # A nested dictionary to store assistants:
+        # self.assistants = {
+        #   'user_lance_email@example.com': {
+        #     'work': TaskAssistant3_instance_for_work,
+        #     'personal': TaskAssistant3_instance_for_personal
+        #   },
+        # }
+        self.assistants: Dict[str, Dict[str, TaskAssistant3]] = {}
         self.qdrant_url = os.getenv("QDRANT_URL")
         print(f"QDRANT_URL: {self.qdrant_url}")
 
         # Personal assistant configuration
-        personal_role = """You are a friendly and organized personal task assistant powered by LangGraph workflows. Your main focus is helping users stay on top of their personal tasks and commitments through structured processing. Specifically:
+        self.personal_role = """You are a friendly and organized personal task assistant powered by LangGraph workflows. Your main focus is helping users stay on top of their personal tasks and commitments through structured processing. Specifically:
 
 - Help track and organize personal tasks using advanced workflow capabilities
 - When providing a 'todo summary':
@@ -829,7 +836,7 @@ Your communication style should be encouraging and helpful, never judgmental.
 When tasks are missing deadlines, respond with something like "I notice [task] doesn't have a deadline yet. Would you like to add one to help us track it better?"""
 
         # Work assistant configuration
-        work_role = """You are a focused and efficient work task assistant powered by LangGraph workflows. 
+        self.work_role = """You are a focused and efficient work task assistant powered by LangGraph workflows. 
 
 Your main focus is helping users manage their work commitments with realistic timeframes through structured processing. 
 
@@ -852,18 +859,46 @@ Your communication style should be supportive but practical.
 
 When tasks are missing deadlines, respond with something like "I notice [task] doesn't have a deadline yet. Based on similar tasks, this might take [suggested timeframe]. Would you like to set a deadline with this in mind?"""
 
-        self.assistants['personal'] = TaskAssistant3(personal_role, 'personal', 'lance')
-        self.assistants['work'] = TaskAssistant3(work_role, 'work', 'lance')
-    
-    def get_assistant(self, category: str) -> TaskAssistant3:
-        return self.assistants.get(category)
+    def get_assistant(self, category: str, user_id: str) -> TaskAssistant3:
+        """
+        Retrieves a TaskAssistant instance for a given user and category.
+        If it doesn't exist, a new one is created.
+        """
+        # Ensure the user's dictionary exists
+        if user_id not in self.assistants:
+            self.assistants[user_id] = {}
+            print(f"INFO: New user '{user_id}' detected. Initializing assistant dictionary.")
+        
+        # Check if the specific assistant exists for this user/category
+        if category not in self.assistants[user_id]:
+            print(f"INFO: Creating new '{category}' assistant for user '{user_id}'.")
+            
+            # Personal assistant configuration
+            if category == 'personal':
+                role_prompt = self.personal_role
+            # Work assistant configuration
+            elif category == 'work':
+                role_prompt = self.work_role
+            else:
+                raise ValueError(f"Unknown assistant category: {category}")
+
+            # Instantiate and store the new assistant, passing the user_id
+            self.assistants[user_id][category] = TaskAssistant3(
+                role_prompt=role_prompt,
+                category=category,
+                user_id=user_id # Crucially, pass the unique user ID
+            )
+            
+        return self.assistants[user_id][category]
 
 # Usage example
 async def main():
     task_manager = TaskManager3()
     
     # Get work assistant
-    work_assistant = task_manager.get_assistant('work')
+    current_user_id = 'lance_doe_123'
+    print(f"=== Getting Work Assistant for User: {current_user_id} ===")
+    work_assistant = task_manager.get_assistant('work', user_id=current_user_id)
     
     # Create work tasks
     print("=== Creating Work Tasks with LangGraph ===")
@@ -884,7 +919,9 @@ async def main():
     print("Assistant:", response)
     
     # Get personal assistant
-    personal_assistant = task_manager.get_assistant('personal')
+    # --- Get and use the personal assistant for the same user ---
+    print(f"\n=== Getting Personal Assistant for User: {current_user_id} ===")
+    personal_assistant = task_manager.get_assistant('personal', user_id=current_user_id)
     
     # Create personal tasks
     print("\n=== Creating Personal Tasks with LangGraph ===")
