@@ -38,6 +38,9 @@ export const fetchTasks = async (assistantType: 'work' | 'personal'): Promise<Ta
   
   const response = await apiRequest<{ tasks: Task[] }>(endpoint, {
     method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+    },
   });
 
   if (response.error) {
@@ -52,6 +55,9 @@ export const completeTask = async (assistantType: 'work' | 'personal', taskId: s
   
   const response = await apiRequest<{ task: Task }>(endpoint, {
     method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+    },
   });
 
   if (response.error) {
@@ -66,6 +72,9 @@ export const deleteTask = async (assistantType: 'work' | 'personal', taskId: str
   
   const response = await apiRequest<{ success: boolean; message: string }>(endpoint, {
     method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+    },
   });
 
   if (response.error) {
@@ -78,9 +87,11 @@ export const deleteTask = async (assistantType: 'work' | 'personal', taskId: str
 export const chatWithAssistant = async (data: ChatRequest): Promise<ChatResponse> => {
   const endpoint = data.assistant_type === 'work' ? '/work/tasks' : '/personal/tasks';
   
+  console.log('access_token', localStorage.getItem('access_token'))
   const response = await apiRequest<any>(endpoint, {
     method: 'POST',
     headers: {
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
