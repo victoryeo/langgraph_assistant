@@ -16,6 +16,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from authlib.integrations.starlette_client import OAuth
 from starlette.middleware.sessions import SessionMiddleware
+import psycopg2 # For direct DB operations if needed
 
 # Import task manager
 from task_assistant3 import TaskManager3
@@ -503,11 +504,23 @@ async def delete_personal_task(task_id: str, current_user: User = Depends(get_cu
 # Health check endpoint
 @app.get("/health")
 async def health_check():
+    try:
+        # Test database connection
+        conn = psycopg2.connect(os.getenv("SUPABASE_DB_CONNECTION_STRING"))
+        conn.close()
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "work_assistant_tasks": len(task_manager.get_assistant('work').get_all_tasks()),
-        "personal_assistant_tasks": len(task_manager.get_assistant('personal').get_all_tasks())
+        "database": db_status,
+        "active_users": len(task_manager.assistants),
+        "assistant_instances": {
+            user_id: list(assistants.keys()) 
+            for user_id, assistants in task_manager.assistants.items()
+        }
     }
 
 # Add this simple test endpoint to verify the exception handler works
