@@ -11,3 +11,8 @@ pip install -r requirements.txt
 python task_api.py 
 # Alternative
 uvicorn task_api:app --reload
+
+# Task assistants
+task_assistant : langchain
+task_assistant2 : langgraph
+task_assistant3 : langgraph + pgvector
