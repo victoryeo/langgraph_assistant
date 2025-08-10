@@ -1,6 +1,6 @@
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+#from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -54,7 +54,8 @@ class TaskAssistant3:
         else:
             openai_api_key = os.getenv("OPENAI_API_KEY")
             if openai_api_key:
-                self.llm = ChatOpenAI(model="gpt-4")
+                #self.llm = ChatOpenAI(model="gpt-4")
+                print("OpenAI API key is set")
             else:
                 raise ValueError("Neither GROQ_API_KEY nor OPENAI_API_KEY is set")
 
