@@ -7,15 +7,17 @@ export async function handleSignIn(formData) {
   try {
     const email = formData.get('email')
     const password = formData.get('password')
-    console.log(email, password)
-    await signIn("credentials", {
+    console.log("action", email, password)
+    const res = await signIn("credentials", {
       email,
       password,
-      redirectTo: "/",
+      redirect: false,
     })
+    console.log("action", res)
+    return { success: true }
   } catch (error) {
     return { error: "Invalid email or password" }
   }
   
-  redirect('/')
+  //redirect('/')
 }

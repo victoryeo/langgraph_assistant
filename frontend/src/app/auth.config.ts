@@ -11,37 +11,29 @@ const providers: Provider[] = [
       },
       authorize: async (credentials) => {
         console.log("authorize")
-        const { getUsersFromFile } = await import('./lib/users-server');
-        const users = getUsersFromFile();
 
         if (!credentials?.email || !credentials?.password) {
           return null
         }
-
+        console.log(credentials?.email, credentials?.password)
         // Type assertion to ensure credentials are strings
         const email = credentials.email as string
         const password = credentials.password as string
 
-        const user = users.find(user => user.email === email)
-        console.log(users)
-        console.log(email, password)
-        console.log(user)
-        if (!user) {
+        const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3001';
+        const response = await fetch(`${baseUrl}/api/auth/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        console.log(response)
+        if (response.ok) {
+          const user = await response.json();
+          console.log('ok', user)
+          return user;
+        } else {
           console.error("user not found")
           return null
-        }
-        console.log(password, user.password)
-
-        const isPasswordValid = (password == user.password)
-        
-        if (!isPasswordValid) {
-          return null
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
         }
       }
     })

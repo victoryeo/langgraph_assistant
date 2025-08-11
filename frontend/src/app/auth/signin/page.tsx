@@ -25,7 +25,7 @@ export default function SignIn() {
       setError(result.error)
     }
     
-    const response = await fetch('/api/auth/register', {
+    const response = await fetch('/api/users', {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
