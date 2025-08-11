@@ -5,6 +5,7 @@ import { signIn } from "../../auth"
 import { useRouter } from 'next/navigation'
 import { providerMap } from 'src/app/auth.config';
 import { handleSignIn } from '../../actions/auth'
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function SignIn() {
   const [email, setEmail] = useState('')
@@ -12,6 +13,14 @@ export default function SignIn() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const { 
+    isLoggedIn, 
+    userInfo, 
+    isLoading, 
+    setIsLoggedIn, 
+    setUserInfo,
+    setIsLoading
+  } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -23,6 +32,8 @@ export default function SignIn() {
     console.log(result)
     if (result?.error) {
       setError(result.error)
+      setLoading(false)
+      return
     }
     
     const response = await fetch('/api/users', {
@@ -34,8 +45,19 @@ export default function SignIn() {
     const data = await response.json()
     console.log(data)
     
-    router.push('/')
+    const user = data.find((u: any) => u.email === email)
+    console.log(user)
+
+    setIsLoggedIn(true)
     setLoading(false)
+    if (user) {
+      setUserInfo({
+        name: user.name,
+        email: user.email,
+        picture: user.picture
+      })
+    }
+    router.push('/')
   }
 
   return (

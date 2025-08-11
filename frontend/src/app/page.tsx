@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import WorkAssistant from './components/WorkAssistant';
 import PersonalAssistant from './components/PersonalAssistant';
-import { useSession, signOut } from 'next-auth/react'
-import Link from 'next/link'
+import { useSession, signOut } from 'next-auth/react';
+import Link from 'next/link';
+import { useAuth } from './contexts/AuthContext';
 
 type AssistantType = 'work' | 'personal' | null;
 
@@ -20,17 +21,24 @@ export default function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeAssistant, setActiveAssistant] = useState<AssistantType>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [userInfo, setUserInfo] = useState<any>(null);
-  const { data: session, status } = useSession()
+  const { 
+    isLoggedIn, 
+    userInfo, 
+    isLoading, 
+    error, 
+    setError, 
+    setIsLoggedIn, 
+    setUserInfo,
+    setIsLoading
+  } = useAuth();
+  const { data: session, status } = useSession();
 
   const assistants: Assistant[] = [
     { id: 'work', name: 'Work Assistant', emoji: '💼', color: 'bg-blue-100 hover:bg-blue-200' },
     { id: 'personal', name: 'Personal Assistant', emoji: '🏠', color: 'bg-green-100 hover:bg-green-200' },
   ];
 
+  // Handle OAuth callback parameters
   useEffect(() => {
     const handleAuthCallback = () => {
       // Check for existing token first
@@ -50,7 +58,6 @@ export default function Home() {
         return;
       }
 
-      // Handle OAuth callback parameters
       const urlParams = new URLSearchParams(window.location.search);
       const accessToken = urlParams.get('access_token');
       const tokenType = urlParams.get('token_type');
@@ -75,31 +82,34 @@ export default function Home() {
           const tokenParts = accessToken.split('.');
           if (tokenParts.length === 3) {
             const payload = JSON.parse(atob(tokenParts[1]));
-            console.log(payload)
+            console.log(payload);
             if (payload.email) {
               // Store basic user info from token
-              const basicUserInfo = { name: payload.name, email: payload.email, picture: payload.picture };
+              const basicUserInfo = { 
+                name: payload.name, 
+                email: payload.email, 
+                picture: payload.picture 
+              };
               localStorage.setItem('user_info', JSON.stringify(basicUserInfo));
               setUserInfo(basicUserInfo);
+              setIsLoggedIn(true);
+              setError(''); // Clear any previous errors
+              console.log('Login successful!');
             }
           }
         } catch (e) {
           console.warn('Failed to decode token:', e);
+          setError('Failed to process authentication. Please try again.');
         }
         
         // Clear the URL parameters
         window.history.replaceState({}, document.title, window.location.pathname);
-        
-        console.log('Login successful!');
-        setIsLoggedIn(true);
-        setError(''); // Clear any previous errors
       }
-      
       setIsLoading(false);
     };
 
     handleAuthCallback();
-  }, []); // Remove isLoading from dependency array to prevent infinite loop
+  }, [setError, setIsLoggedIn, setUserInfo]);
 
   const handleBack = () => {
     setActiveAssistant(null);
