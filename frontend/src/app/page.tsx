@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import WorkAssistant from './components/WorkAssistant';
 import PersonalAssistant from './components/PersonalAssistant';
+import { useSession, signOut } from 'next-auth/react'
+import Link from 'next/link'
 
 type AssistantType = 'work' | 'personal' | null;
 
@@ -22,6 +24,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [userInfo, setUserInfo] = useState<any>(null);
+  const { data: session, status } = useSession()
 
   const assistants: Assistant[] = [
     { id: 'work', name: 'Work Assistant', emoji: '💼', color: 'bg-blue-100 hover:bg-blue-200' },
@@ -161,6 +164,22 @@ export default function Home() {
             </svg>
             <span>Continue with Google</span>
           </button>
+          <div className="space-x-4">
+            <button
+              type="button"
+              onClick={() => router.push('/auth/signin')}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/auth/register')}
+              className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+            >
+              Register
+            </button>
+          </div>
         </div>
       </div>
     );
