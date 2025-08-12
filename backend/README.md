@@ -11,8 +11,16 @@ pip install -r requirements.txt
 python task_api.py 
 # Alternative
 uvicorn task_api:app --reload
+# For https
+uvicorn task_api:app --reload --port 8000 --ssl-keyfile localhost.key --ssl-certfile localhost.crt
 
 # Task assistants
 task_assistant : langchain
 task_assistant2 : langgraph + qdrant
 task_assistant3 : langgraph + pgvector
+
+### command to generate self signed certificate for localhost
+openssl req -x509 -out localhost.crt -keyout localhost.key \
+  -newkey rsa:2048 -nodes -sha256 \
+  -subj '/CN=localhost' -extensions EXT -config <( \
+   printf "[dn]\nCN=localhost\n[req]\ndistinguished_name = dn\n[EXT]\nsubjectAltName=DNS:localhost\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth")
