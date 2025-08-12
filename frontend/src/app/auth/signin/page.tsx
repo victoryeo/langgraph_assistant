@@ -57,6 +57,28 @@ export default function SignIn() {
         picture: user.picture
       })
     }
+    // Create a URLSearchParams object to format the data as form-urlencoded
+    const reqBody = new URLSearchParams({
+      username: user.name,
+      password: password,
+    });
+    // call backend to get token
+    
+    const response2 = await fetch('http://localhost:8000/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: reqBody
+    })
+    console.log(response2)
+    const result2 = await response2.json()
+    console.log(result2)
+    if (result2?.access_token) {
+      // Store the tokens
+      localStorage.setItem('access_token', result2.access_token);
+      localStorage.setItem('token_type', result2.token_type || 'bearer');
+    }
     router.push('/')
   }
 
