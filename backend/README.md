@@ -14,5 +14,5 @@ uvicorn task_api:app --reload
 
 # Task assistants
 task_assistant : langchain
-task_assistant2 : langgraph
+task_assistant2 : langgraph + qdrant
 task_assistant3 : langgraph + pgvector
