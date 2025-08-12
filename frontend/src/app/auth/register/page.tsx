@@ -48,6 +48,22 @@ export default function SignUp() {
       const result = await response.json();
       console.log(result)
       if (response.ok) {
+        // call backend to register user
+        const response2 = await fetch('http://localhost:8000/register', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: formData.name,
+            email: formData.email,
+            password: formData.password,
+            picture: null
+          })
+        })
+        console.log(response2)
+        const result2 = await response2.json()
+        console.log(result2)
         router.push('/auth/signin?message=Registration successful')
       } else {
         setError(result.message || 'Result not ok')
