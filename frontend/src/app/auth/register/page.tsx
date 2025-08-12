@@ -49,7 +49,7 @@ export default function SignUp() {
       console.log(result)
       if (response.ok) {
         // call backend to register user
-        const response2 = await fetch('http://localhost:8000/register', {
+        const response2 = await fetch('https://localhost:8000/register', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
