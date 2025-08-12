@@ -162,6 +162,7 @@ class User(BaseModel):
     name: Optional[str] = None
     picture: Optional[str] = None
     disabled: Optional[bool] = False
+    password: Optional[str] = None
 
 class UserInDB(User):
     hashed_password: str
@@ -299,9 +300,11 @@ async def register_user(user: User):
     if user.email in fake_users_db:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    # In a real app, you would hash the password
-    hashed_password = pwd_context.hash("temporary_password")
+    # In a real app, we hash the password
+    hashed_password = pwd_context.hash(user.password)
     user_in_db = UserInDB(**user.dict(), hashed_password=hashed_password)
+    print(user)
+    print(user_in_db)
     fake_users_db[user.email] = user_in_db
     
     return {"message": "User created successfully", "email": user.email}
@@ -311,7 +314,18 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     """
     OAuth2 password flow for token generation (alternative to Google OAuth)
     """
-    user = fake_users_db.get(form_data.username)
+    print(form_data.username)
+    print(form_data.password)
+    # Find user by matching the username with the 'name' property
+    #below line not working because fake_users_db is a dictionary with email as key
+    #user = fake_users_db.get(form_data.username)
+    user = None
+    for key, value in fake_users_db.items():
+        if value.name == form_data.username:
+            user = value
+            break
+    print(fake_users_db)
+    print(user)
     if not user or not pwd_context.verify(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
