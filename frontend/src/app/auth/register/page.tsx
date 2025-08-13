@@ -46,7 +46,7 @@ export default function SignUp() {
       })
       console.log(response)
       const result = await response.json();
-      console.log(result)
+      console.log("result", result)
       if (response.ok) {
         // call backend to register user
         const response2 = await fetch('https://localhost:8000/register', {
@@ -63,10 +63,14 @@ export default function SignUp() {
         })
         console.log(response2)
         const result2 = await response2.json()
-        console.log(result2)
-        router.push('/auth/signin?message=Registration successful')
+        console.log("result2", result2)
+        if (response2.ok) {
+          router.push('/auth/signin?message=Registration successful')
+        } else {
+          setError(result2.message || 'Backend Result not ok')
+        }
       } else {
-        setError(result.message || 'Result not ok')
+        setError(result.message || 'User Result not ok')
       }
     } catch (error) {
       setError('Something was wrong')

@@ -17,7 +17,6 @@ export default function SignIn() {
     isLoading, 
     setIsLoggedIn, 
     setUserInfo,
-    setIsLoading
   } = useAuth();
 
   const handleSubmit = async (e) => {
@@ -46,8 +45,6 @@ export default function SignIn() {
     const user = data.find((u: any) => u.email === email)
     console.log(user)
 
-    setIsLoggedIn(true)
-    setLoading(false)
     if (user) {
       // Ensure picture URL is properly formatted
       const userInfo = {
@@ -82,12 +79,21 @@ export default function SignIn() {
     console.log(response2)
     const result2 = await response2.json()
     console.log(result2)
-    if (result2?.access_token) {
-      // Store the tokens
-      localStorage.setItem('access_token', result2.access_token);
-      localStorage.setItem('token_type', result2.token_type || 'bearer');
+    if (response2.ok) {
+      setIsLoggedIn(true)
+      setLoading(false)
+
+      if (result2?.access_token) {
+        // Store the tokens
+        localStorage.setItem('access_token', result2.access_token);
+        localStorage.setItem('token_type', result2.token_type || 'bearer');
+      }
+      router.push('/')
+    } else {
+      setError(result2.message || 'Token Result not ok')
+      setLoading(false)
     }
-    router.push('/')
+
   }
 
   return (
