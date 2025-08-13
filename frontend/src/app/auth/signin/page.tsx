@@ -1,9 +1,7 @@
 // File: app/auth/signin/page.js
 'use client'
 import { useState } from 'react'
-import { signIn } from "../../auth"
 import { useRouter } from 'next/navigation'
-import { providerMap } from 'src/app/auth.config';
 import { handleSignIn } from '../../actions/auth'
 import { useAuth } from '../../contexts/AuthContext';
 

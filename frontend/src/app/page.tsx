@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import WorkAssistant from './components/WorkAssistant';
 import PersonalAssistant from './components/PersonalAssistant';
 import { useSession, signOut } from 'next-auth/react';
-import Link from 'next/link';
 import { useAuth } from './contexts/AuthContext';
 
 type AssistantType = 'work' | 'personal' | null;
