@@ -283,6 +283,7 @@ async def auth_google_callback(request: Request):
         response = RedirectResponse(
             url=f"{frontend_url}/?access_token={access_token}&token_type=bearer"
         )
+        print("fake_users_db",fake_users_db)
         return response
         
     except Exception as e:
