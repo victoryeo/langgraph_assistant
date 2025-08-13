@@ -7,7 +7,7 @@
     ],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["frontend/src/*"]
+      "@/*": ["./src/*"]
     },
     "allowJs": true,
     "skipLibCheck": true,
