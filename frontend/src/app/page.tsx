@@ -30,6 +30,14 @@ export default function Home() {
     setUserInfo,
     setIsLoading
   } = useAuth();
+  
+  // Debug userInfo changes
+  useEffect(() => {
+    console.log('userInfo in page component:', userInfo);
+    if (userInfo?.picture) {
+      console.log('Picture URL:', userInfo.picture);
+    }
+  }, [userInfo]);
   const { data: session, status } = useSession();
 
   const assistants: Assistant[] = [
@@ -43,7 +51,7 @@ export default function Home() {
       // Check for existing token first
       const existingToken = localStorage.getItem('access_token');
       const existingUserInfo = localStorage.getItem('user_info');
-      
+      console.log(existingUserInfo)
       if (existingToken) {
         setIsLoggedIn(true);
         if (existingUserInfo) {
@@ -219,13 +227,22 @@ export default function Home() {
                       </td>
                       <td className="px-4 py-2 flex items-center gap-3">
                         <div className="font-medium text-gray-900">
-                          {userInfo.picture && (
-                            <img
-                              src={userInfo.picture}
-                              alt="Profile"
-                              className="w-4 h-4 rounded-full"
-                              style={{ width: '24px', height: '24px' }}
-                            />
+                          {userInfo.picture ? (
+                            <>
+                              <img
+                                src={userInfo.picture}
+                                alt="Profile"
+                                className="rounded-full"
+                                style={{ width: '24px', height: '24px' }}
+                                onError={(e) => {
+                                  console.error('Error loading image:', userInfo.picture, e);
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                }}
+                              />
+                            </>
+                          ) : (
+                            <div className="text-xs text-red-500">No picture</div>
                           )}
                         </div>
                       </td>

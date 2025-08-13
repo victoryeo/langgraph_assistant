@@ -23,6 +23,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState('');
   const { data: session, status } = useSession();
 
+  // Update localStorage whenever userInfo changes
+  useEffect(() => {
+    if (userInfo) {
+      console.log("userInfo updated",userInfo)
+      localStorage.setItem('user_info', JSON.stringify(userInfo));
+    }
+  }, [userInfo]);
+
   useEffect(() => {
     const checkAuth = () => {
       const existingToken = localStorage.getItem('access_token');
@@ -32,7 +40,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoggedIn(true);
         if (existingUserInfo) {
           try {
-            setUserInfo(JSON.parse(existingUserInfo));
+            const parsedUserInfo = JSON.parse(existingUserInfo);
+            // Ensure picture URL is properly formatted
+            if (parsedUserInfo.picture && !parsedUserInfo.picture.startsWith('http')) {
+              parsedUserInfo.picture = `/${parsedUserInfo.picture}`.replace(/\/+/g, '/');
+            }
+            setUserInfo(parsedUserInfo);
           } catch (e) {
             console.warn('Failed to parse stored user info:', e);
           }

@@ -49,11 +49,21 @@ export default function SignIn() {
     setIsLoggedIn(true)
     setLoading(false)
     if (user) {
-      setUserInfo({
+      // Ensure picture URL is properly formatted
+      const userInfo = {
         name: user.name,
         email: user.email,
         picture: user.picture
-      })
+      };
+      
+      // If picture is a relative path, ensure it starts with a forward slash
+      if (userInfo.picture && !userInfo.picture.startsWith('http') && !userInfo.picture.startsWith('/')) {
+        userInfo.picture = `/${userInfo.picture}`.replace(/\/+/g, '/');
+      }
+      
+      setUserInfo(userInfo);
+      // Also store in localStorage directly to ensure it's available on page reload
+      localStorage.setItem('user_info', JSON.stringify(userInfo));
     }
     // Create a URLSearchParams object to format the data as form-urlencoded
     const reqBody = new URLSearchParams({
