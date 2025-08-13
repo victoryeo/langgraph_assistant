@@ -2,6 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { NextRequest } from 'next/server';
+import { UserIntf } from '@/types/user';
 
 const usersFile = path.join(process.cwd(), 'data', 'users.json');
 
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'User already exists' }, { status: 400 });
   }
   
-  const userToAdd = {
+  const userToAdd: UserIntf = {
     ...newUser,
     id: Date.now().toString()
   };

@@ -2,6 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { NextRequest } from 'next/server';
+import { UserIntf } from '@/types/user';
 
 export async function POST(request: NextRequest) {
   const { email, password } = await request.json();
@@ -12,7 +13,7 @@ export async function POST(request: NextRequest) {
     const users = JSON.parse(data);
     console.log("verify route")
     console.log(users)
-    const user = users.find((u: any) => u.email === email && u.password === password);
+    const user: UserIntf | undefined = users.find((u: UserIntf) => u.email === email && u.password === password);
     
     if (user) {
       return Response.json({

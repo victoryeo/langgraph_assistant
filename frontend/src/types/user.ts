@@ -1,6 +1,6 @@
-export interface User {
+export interface UserIntf {
   email: string;
   name?: string;
-  picture?: string;
-  disabled?: boolean;
+  password?: string;
+  id?: string;
 }
