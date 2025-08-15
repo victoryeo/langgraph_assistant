@@ -4,7 +4,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import PGVector # Import PGVector
+from langchain_postgres.vectorstores import PGVector
+#from langchain_community.vectorstores import PGVector
 from langchain_community.vectorstores.pgvector import DistanceStrategy
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -48,6 +49,7 @@ class TaskAssistant3:
             raise ValueError("SUPABASE_DB_CONNECTION_STRING environment variable is not set.")
 
         # LLM setup
+        print("Info: LLM setup")
         groq_api_key = os.getenv("GROQ_API_KEY")
         if groq_api_key:
             self.llm = ChatGroq(temperature=0.7, model_name="llama-3.3-70b-versatile")
@@ -64,6 +66,7 @@ class TaskAssistant3:
         self.conversation_history = []
         
         # Setup embeddings for vector store
+        print("Setup embeddings for vector store")
         self.embeddings = self._setup_embeddings()
         
         # Initialize PGVector client and table
@@ -74,22 +77,35 @@ class TaskAssistant3:
         #key: str = os.environ.get("SUPABASE_KEY")
         #supabase: Client = create_client(url, key)
 
+        # Test PostgreSQL connection
+        try:
+            conn = psycopg2.connect(self.db_connection_string)
+            print("✅ PostgreSQL connection successful!")
+            conn.close()
+        except Exception as e:
+            print(f"❌ PostgreSQL connection failed: {e}")
+
         # Initialize PGVector vector store
-        self.vector_store = PGVector(
-            collection_name=self.collection_name,
-            connection_string=self.db_connection_string,
-            embedding_function=self.embeddings,
-            distance_strategy=DistanceStrategy.COSINE, # Align with Qdrant's COSINE
-            use_jsonb=True # <--- ADD THIS LINE TO EXPLICITLY SET JSONB
-        )
-        print(f"DEBUG: PGVector initialized with collection_name: {self.collection_name}")
-        
+        print("Initialize PGVector client and table")
+        try:
+            self.vector_store = PGVector(
+                collection_name=self.collection_name,
+                connection=self.db_connection_string,
+                embeddings=self.embeddings,
+                distance_strategy="cosine", # Align with Qdrant's COSINE
+                use_jsonb=True # <--- ADD THIS LINE TO EXPLICITLY SET JSONB
+            )
+            print(f"✅ PGVector initialized with collection_name: {self.collection_name}")
+        except Exception as e:
+            print(f"❌ PGVector initialization failed: {e}")
+
         # Create LangGraph workflow
         self.workflow = self._create_workflow()
         
     def _setup_embeddings(self):
         """Setup embeddings for vector store"""
-        return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        return embeddings
     
     def _task_to_document(self, task: Dict[str, Any]) -> Document:
         """Convert a task dictionary to a Document for vector storage"""
@@ -889,6 +905,7 @@ When tasks are missing deadlines, respond with something like "I notice [task] d
                 category=category,
                 user_id=user_id # Crucially, pass the unique user ID
             )
+            print(f"INFO: New '{category}' assistant created for user '{user_id}'.")
             
         return self.assistants[user_id][category]
 
