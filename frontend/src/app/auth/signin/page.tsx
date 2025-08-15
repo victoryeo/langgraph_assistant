@@ -69,7 +69,7 @@ export default function SignIn() {
     });
     // call backend to get token
     
-    const response2 = await fetch('https://localhost:8000/token', {
+    const response2 = await fetch('http://localhost:8000/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',

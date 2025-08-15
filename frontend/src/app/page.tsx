@@ -126,7 +126,7 @@ export default function Home() {
     try {
       setError(''); // Clear any previous errors
       // Redirect to your FastAPI Google OAuth endpoint
-      window.location.href = 'https://localhost:8000/auth/google';
+      window.location.href = 'http://localhost:8000/auth/google';
     } catch (error) {
       console.error('Google login error:', error);
       setError('Failed to initiate Google login. Please try again.');
