@@ -25,4 +25,5 @@ pydantic[email]
 authlib
 starlette
 itsdangerous
- 
+langchain-postgres
+sentence-transformers
