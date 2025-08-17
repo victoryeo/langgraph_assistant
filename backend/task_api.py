@@ -175,6 +175,7 @@ class TokenData(BaseModel):
     email: Optional[str] = None
 
 # In-memory user store (replace with database in production)
+# needs to read from users.json
 fake_users_db = {}
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
