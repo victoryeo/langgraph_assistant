@@ -64,6 +64,7 @@ export default function SignIn() {
     }
     // Create a URLSearchParams object to format the data as form-urlencoded
     const reqBody = new URLSearchParams({
+      email: user.email,
       username: user.name,
       password: password,
     });
