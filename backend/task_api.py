@@ -17,6 +17,10 @@ from google.auth.transport import requests as google_requests
 from authlib.integrations.starlette_client import OAuth
 from starlette.middleware.sessions import SessionMiddleware
 import psycopg2 # For direct DB operations if needed
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
+from motor.motor_asyncio import AsyncIOMotorClient  # For async support
+from fastapi import Form
 
 # Import task manager
 from task_assistant3 import TaskManager3
@@ -167,6 +171,26 @@ class User(BaseModel):
 class UserInDB(User):
     hashed_password: str
 
+class EmailPasswordForm(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserBase(BaseModel):
+    email: EmailStr
+    name: Optional[str] = None
+    picture: Optional[str] = None
+    disabled: Optional[bool] = False
+    hashed_password: Optional[str] = None
+    created_at: Optional[datetime] = datetime.utcnow()
+    updated_at: Optional[datetime] = datetime.utcnow()
+
+class UserCreate(UserBase):
+    password: Optional[str] = None
+
+class UserInDB(UserBase):
+    class Config:
+        from_attributes = True
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -175,7 +199,66 @@ class TokenData(BaseModel):
     email: Optional[str] = None
 
 # In-memory user store (replace with database in production)
+# will be replaced by mongodb
 fake_users_db = {}
+
+# MongoDB connection setup
+MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+DB_NAME = "users_db"
+
+# For async operations (recommended)
+async_client = AsyncIOMotorClient(MONGODB_URI)
+async_db = async_client[DB_NAME]
+
+async def get_user_by_email(email: str) -> Optional[UserInDB]:
+    """Get user by email from MongoDB"""
+    try:
+        user_data = await async_db.users.find_one({"email": email})
+        if user_data:
+            return UserInDB(**user_data)
+        return None
+    except PyMongoError as e:
+        print(f"Database error: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+async def create_user(user: UserCreate) -> UserInDB:
+    """Create new user in MongoDB"""
+    try:
+        # Hash password if provided
+        if user.password:
+            hashed_password = pwd_context.hash(user.password)
+            user_dict = user.dict(exclude={"password"})
+            user_dict["hashed_password"] = hashed_password
+        else:
+            user_dict = user.dict()
+        
+        # Set timestamps
+        now = datetime.utcnow()
+        user_dict["created_at"] = now
+        user_dict["updated_at"] = now
+        
+        result = await async_db.users.insert_one(user_dict)
+        if result.inserted_id:
+            return UserInDB(**user_dict)
+        raise HTTPException(status_code=500, detail="Failed to create user")
+    except PyMongoError as e:
+        print(f"Database error: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+async def update_user(email: str, update_data: dict) -> Optional[UserInDB]:
+    """Update user in MongoDB"""
+    try:
+        update_data["updated_at"] = datetime.utcnow()
+        result = await async_db.users.update_one(
+            {"email": email},
+            {"$set": update_data}
+        )
+        if result.modified_count == 1:
+            return await get_user_by_email(email)
+        return None
+    except PyMongoError as e:
+        print(f"Database error: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -202,15 +285,25 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise credentials_exception
     
-    user = fake_users_db.get(token_data.email)
+    user = await get_user_by_email(token_data.email)
     if user is None:
         raise credentials_exception
     return user
 
-async def get_current_active_user(current_user: User = Depends(get_current_user)):
+async def get_current_active_user(current_user: UserInDB = Depends(get_current_user)):
     if current_user.disabled:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
+
+@app.on_event("startup")
+async def startup_db_client():
+    # Create indexes
+    try:
+        await async_db.users.create_index("email", unique=True)
+        await async_db.users.create_index("created_at")
+        print("✅ MongoDB indexes created")
+    except Exception as e:
+        print(f"❌ Error creating indexes: {e}")
 
 #=================================================================================
 # Task Manager and Google OAuth Setup (No changes here)
@@ -246,7 +339,7 @@ async def auth_google_callback(request: Request):
     try:
         # Get the token from Google
         token = await oauth.google.authorize_access_token(request)
-        
+
         # Get user info (this is automatically included with openid scope)
         user_info = token.get('userinfo')
         
@@ -260,16 +353,17 @@ async def auth_google_callback(request: Request):
         if not email:
             raise HTTPException(status_code=400, detail="No email provided")
         
-        user = fake_users_db.get(email)
+        # Check if user exists in MongoDB
+        user = await get_user_by_email(email)
         if not user:
-            # Create new user
-            user = User(
+            # Create new user in MongoDB
+            new_user = UserCreate(
                 email=email,
                 name=user_info.get("name"),
                 picture=user_info.get("picture"),
                 disabled=False
             )
-            fake_users_db[email] = user
+            user = await create_user(new_user)
         
         # Create JWT token
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -283,7 +377,6 @@ async def auth_google_callback(request: Request):
         response = RedirectResponse(
             url=f"{frontend_url}/?access_token={access_token}&token_type=bearer"
         )
-        print("fake_users_db",fake_users_db)
         return response
         
     except Exception as e:
@@ -294,40 +387,42 @@ async def auth_google_callback(request: Request):
         )
 
 @app.post("/register")
-async def register_user(user: User):
+async def register_user(user: UserCreate):  # Changed from User to UserCreate
     """
     Register a new user (alternative to OAuth)
     """
-    if user.email in fake_users_db:
+    # Check if user exists in MongoDB
+    existing_user = await get_user_by_email(user.email)
+    if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    # In a real app, we hash the password
-    hashed_password = pwd_context.hash(user.password)
-    user_in_db = UserInDB(**user.dict(), hashed_password=hashed_password)
-    print(user)
-    print(user_in_db)
-    fake_users_db[user.email] = user_in_db
-    
-    return {"message": "User created successfully", "email": user.email}
+    # Create new user in MongoDB
+    try:
+        created_user = await create_user(user)
+        return {
+            "message": "User created successfully", 
+            "email": created_user.email,
+            "name": created_user.name
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error creating user: {str(e)}"
+        )
 
 @app.post("/token", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login_for_access_token(email: str = Form(...), password: str = Form(...)):
     """
     OAuth2 password flow for token generation (alternative to Google OAuth)
     """
-    print(form_data.username)
-    print(form_data.password)
-    # Find user by matching the username with the 'name' property
-    #below line not working because fake_users_db is a dictionary with email as key
-    #user = fake_users_db.get(form_data.username)
-    user = None
-    for key, value in fake_users_db.items():
-        if value.name == form_data.username:
-            user = value
-            break
-    print(fake_users_db)
+    # Find user in MongoDB
+    user = await get_user_by_email(email)  # username is the email in this flow
     print(user)
-    if not user or not pwd_context.verify(form_data.password, user.hashed_password):
+    print(email)
+    print(password)
+    if not user or not user.hashed_password or not pwd_context.verify(password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -336,7 +431,8 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"email": user.email}, expires_delta=access_token_expires
+        data={"email": user.email, "name": user.name},  # Include name if available
+        expires_delta=access_token_expires
     )
     
     return {"access_token": access_token, "token_type": "bearer"}
