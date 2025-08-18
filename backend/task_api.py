@@ -110,9 +110,9 @@ class TaskListResponse(BaseModel):
     success: bool
     tasks: List[Dict[str, Any]]
 
-#==================================================================================
+#=================================================================================
 # FastAPI App and Middleware
-#==================================================================================
+#=================================================================================
 # Initialize FastAPI app
 app = FastAPI(title="Task Management API", description="API for managing work and personal tasks", version="1.0.0")
 
@@ -175,6 +175,7 @@ class EmailPasswordForm(BaseModel):
     email: EmailStr
     password: str
 
+# UserBase model for authentication using MongoDB
 class UserBase(BaseModel):
     email: EmailStr
     name: Optional[str] = None
@@ -210,6 +211,9 @@ DB_NAME = "users_db"
 async_client = AsyncIOMotorClient(MONGODB_URI)
 async_db = async_client[DB_NAME]
 
+#=================================================================================
+# MongoDB User Functions
+#=================================================================================
 async def get_user_by_email(email: str) -> Optional[UserInDB]:
     """Get user by email from MongoDB"""
     try:
@@ -260,6 +264,9 @@ async def update_user(email: str, update_data: dict) -> Optional[UserInDB]:
         print(f"Database error: {e}")
         raise HTTPException(status_code=500, detail="Database error")
 
+#=================================================================================
+# JWT Token Functions
+#=================================================================================
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
@@ -306,7 +313,7 @@ async def startup_db_client():
         print(f"❌ Error creating indexes: {e}")
 
 #=================================================================================
-# Task Manager and Google OAuth Setup (No changes here)
+# Task Manager and Google OAuth Setup
 #=================================================================================
 # Initialize task manager
 task_manager = TaskManager3()
@@ -437,9 +444,9 @@ async def login_for_access_token(email: str = Form(...), password: str = Form(..
     
     return {"access_token": access_token, "token_type": "bearer"}
 
-#==================================================================================
+#=================================================================================
 # API Endpoints (All user-specific endpoints now have a security dependency)
-#==================================================================================
+#=================================================================================
 @app.get("/")
 async def root():
     return {"message": "Task Management API", "endpoints": ["/work/tasks", "/personal/tasks", "/work/summary", "/personal/summary"]}
