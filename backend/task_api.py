@@ -199,7 +199,7 @@ class TokenData(BaseModel):
     email: Optional[str] = None
 
 # In-memory user store (replace with database in production)
-# needs to read from users.json
+# will be replaced by mongodb
 fake_users_db = {}
 
 # MongoDB connection setup
