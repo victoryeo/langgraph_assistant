@@ -42,12 +42,47 @@ export async function POST(request: NextRequest) {
   return Response.json(userToAdd);
 }
 
-export async function GET(request) {
+export async function GET(request: NextRequest) {
   try {
-    // Get all user
+    // Get all users
     const data = fs.readFileSync(usersFile, 'utf8');
     return Response.json(JSON.parse(data));
   } catch (error) {
-    return Response.json({ message: 'Internal server error' }, { status: 500 })
+    return Response.json({ message: 'Internal server error' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { email } = await request.json();
+    
+    if (!email) {
+      return Response.json({ error: 'User email is required' }, { status: 400 });
+    }
+    
+    const users = getUsersFromFile();
+    const userIndex = users.findIndex((user: UserIntf) => user.email === email);
+    
+    if (userIndex === -1) {
+      return Response.json({ error: 'User not found' }, { status: 404 });
+    }
+    
+    // Remove the user from the array
+    const deletedUser = users.splice(userIndex, 1)[0];
+    
+    // Save the updated users array back to the file
+    saveUsersToFile(users);
+    
+    return Response.json({ 
+      message: 'User deleted successfully',
+      email: email 
+    });
+    
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    return Response.json(
+      { error: 'Failed to delete user' }, 
+      { status: 500 }
+    );
   }
 }
