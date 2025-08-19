@@ -48,7 +48,7 @@ export default function Home() {
 
   // Handle OAuth callback parameters
   useEffect(() => {
-    const handleAuthCallback = () => {
+    const handleAuthCallback = async () => {
       // Check for existing token first
       const existingToken = localStorage.getItem('access_token');
       const existingUserInfo = localStorage.getItem('user_info');
@@ -99,10 +99,35 @@ export default function Home() {
                 picture: payload.picture 
               };
               localStorage.setItem('user_info', JSON.stringify(basicUserInfo));
+              
+              // Save user info to file
+              try {
+                const response = await fetch('/api/users', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    name: basicUserInfo.name,
+                    email: basicUserInfo.email,
+                    picture: basicUserInfo.picture
+                  }),
+                });
+                
+                if (!response.ok) {
+                  const error = await response.json();
+                  console.error('Failed to save user info:', error);
+                }
+              } catch (error) {
+                console.error('Error saving user info:', error);
+                // Non-blocking error - we still want to log the user in
+              }
+              
               setUserInfo(basicUserInfo);
               setIsLoggedIn(true);
               setError(''); // Clear any previous errors
               console.log('Login successful!');
+              
+              // Clear OAuth params from URL
+              window.history.replaceState({}, document.title, window.location.pathname);
             }
           }
         } catch (e) {
