@@ -397,26 +397,46 @@ async def auth_google_callback(request: Request):
 async def register_user(user: UserCreate):  # Changed from User to UserCreate
     """
     Register a new user (alternative to OAuth)
+    Returns:
+        JSON: {
+            "message": "User created successfully",
+            "email": "user@example.com"
+        }
     """
     # Check if user exists in MongoDB
     existing_user = await get_user_by_email(user.email)
     if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Email already registered",
+                "email": user.email
+            }
+        )
     
     # Create new user in MongoDB
     try:
         created_user = await create_user(user)
         return {
-            "message": "User created successfully", 
+            "message": "User created successfully",
             "email": created_user.email,
             "name": created_user.name
         }
     except HTTPException as e:
-        raise e
+        return JSONResponse(
+            status_code=e.status_code,
+            content={
+                "message": str(e.detail),
+                "email": user.email
+            }
+        )
     except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Error creating user: {str(e)}"
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": f"Error creating user: {str(e)}",
+                "email": user.email
+            }
         )
 
 @app.post("/token", response_model=Token)

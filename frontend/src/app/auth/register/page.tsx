@@ -67,6 +67,7 @@ export default function SignUp() {
         if (response2.ok) {
           router.push('/auth/signin?message=Registration successful')
         } else {
+          setError(result2.message || 'Backend Result not ok')
           //delete user
           const response3 = await fetch('/api/users', {
             method: 'DELETE',
@@ -80,7 +81,6 @@ export default function SignUp() {
           console.log(response3)
           const result3 = await response3.json()
           console.log("result3", result3)
-          setError(result2.message || 'Backend Result not ok')
         }
       } else {
         setError(result.message || 'User Result not ok')
