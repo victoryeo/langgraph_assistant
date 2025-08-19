@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   
   if (users.find((u: any) => u.email === newUser.email)) {
     console.log("User already exists")
-    return Response.json({ error: 'User already exists' }, { status: 400 });
+    return Response.json({ message: 'User already exists' }, { status: 400 });
   }
   
   const userToAdd: UserIntf = {
