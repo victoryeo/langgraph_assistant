@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import WorkAssistant from './components/WorkAssistant';
+import UserProfileTable from './components/UserProfileTable';
 import PersonalAssistant from './components/PersonalAssistant';
 import { useSession, signOut } from 'next-auth/react';
 import { useAuth } from './contexts/AuthContext';
@@ -212,53 +213,7 @@ export default function Home() {
             {/* User Info Table */}
             {userInfo && (
               <div className="bg-gray-50 rounded-lg border border-gray-200 shadow-sm">
-                <table className="min-w-0">
-                  <tbody>
-                    <tr>  
-                    <th>Name</th>
-                    <th>Avatar</th>
-                    <th>Action</th>
-                    </tr>
-                    <tr>
-                      <td className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-tl-lg">
-                        <div className="font-medium text-gray-900">
-                            {userInfo.name || 'User'}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 flex items-center gap-3">
-                        <div className="font-medium text-gray-900">
-                          {userInfo.picture ? (
-                            <>
-                              <img
-                                src={userInfo.picture}
-                                alt="Profile"
-                                className="rounded-full"
-                                style={{ width: '24px', height: '24px' }}
-                                onError={(e) => {
-                                  console.error('Error loading image:', userInfo.picture, e);
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
-                                }}
-                              />
-                            </>
-                          ) : (
-                            <div className="text-xs text-red-500">No picture</div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 rounded-tr-lg">
-                        <div className="font-medium text-gray-900">
-                        <button
-                          onClick={handleLogout}
-                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
-                        >
-                          Sign out
-                        </button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                <UserProfileTable userInfo={userInfo} onLogout={handleLogout} />
               </div>
             )}
           </div>

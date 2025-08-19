@@ -3,4 +3,5 @@ export interface UserIntf {
   name?: string;
   password?: string;
   id?: string;
+  picture?: string;
 }
