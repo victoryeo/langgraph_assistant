@@ -21,6 +21,8 @@ from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from motor.motor_asyncio import AsyncIOMotorClient  # For async support
 from fastapi import Form
+import certifi
+import ssl
 
 # Import task manager
 from task_assistant3 import TaskManager3
@@ -207,8 +209,18 @@ fake_users_db = {}
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = "users_db"
 
+print("=== SSL Environment Diagnostics ===")
+print(f"OpenSSL version: {ssl.OPENSSL_VERSION}")
+print(f"SSL version: {ssl.OPENSSL_VERSION_INFO}")
+print(f"Certifi CA bundle: {certifi.where()}")
+print(f"HAS_SNI: {ssl.HAS_SNI}")
+
 # For async operations (recommended)
-async_client = AsyncIOMotorClient(MONGODB_URI)
+async_client = AsyncIOMotorClient(
+    MONGODB_URI,
+    tls=True,
+    tlsCAFile=certifi.where(),
+    )
 async_db = async_client[DB_NAME]
 
 #=================================================================================
