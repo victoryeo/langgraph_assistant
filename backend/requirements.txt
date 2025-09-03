@@ -10,7 +10,9 @@ fastapi
 uvicorn
 langchain-huggingface
 langchain_qdrant
-psycopg2-binary
+psycopg2
+psycopg[binary]
+psycopg[c]
 sqlalchemy
 pgvector
 supabase
